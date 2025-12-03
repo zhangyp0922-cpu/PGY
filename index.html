@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volatile Digital Dandelion V7</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #e8e8e8; }
+        canvas { display: block; }
+
+        /* UI 保持不变 */
+        #ui-container {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px; border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 100; display: flex; flex-direction: column; gap: 10px;
+        }
+        label { font-size: 14px; font-weight: bold; color: #333; }
+        input[type=range] { width: 200px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="ui-container">
+    <label>风力控制 (Wind Force)</label>
+    <input type="range" id="windSlider" min="0" max="2" step="0.01" value="0.5">
+</div>
+
+<script>
+    const CONFIG = {
+        baseSeedCount: 50,
+        bloomInterval: 2,
+        baseColor: 20,            
+        windSpeed: 0.005,
+        
+        // --- 新增：动态与模糊参数 ---
+        hoverSpeed: 0.05,          // 数字颤动速度加快
+        hoverAmp: 0.15,            // 数字颤动幅度加大
+        lineVolatilitySpeed: 0.1,  // 线条波动的速率 (高频噪声)
+        lineVolatilityAmp: 30,     // 线条波动的幅度 (像素)
+        maxBlurStrength: 12        // 最大高斯模糊强度 (像素) - 增加此值会更模糊但更卡
+    };
+
+    let flowers = [];
+    let globalWindTime = 0;
+    let windSlider;
+
+    function setup() {
+        // 强制使用 P2D 模式以支持滤镜
+        createCanvas(windowWidth, windowHeight, P2D);
+        textFont('Courier New, monospace'); 
+        frameRate(60); 
+        windSlider = document.getElementById('windSlider');
+        initFlowers();
+    }
+
+    function initFlowers() {
+        flowers = [];
+        flowers.push(new Dandelion(width * 0.5, height + 100, 0.45, 0, 1.3));
+        flowers.push(new Dandelion(width * 0.2, height + 80, 0.6, 60, 0.7));
+        flowers.push(new Dandelion(width * 0.8, height + 90, 0.55, 120, 0.9));
+    }
+
+    function draw() {
+        background('#e8e8e8'); 
+        
+        let userWindForce = parseFloat(windSlider.value);
+        globalWindTime += CONFIG.windSpeed;
+        let windNoise = noise(globalWindTime) - 0.5;
+        let currentWind = windNoise * userWindForce; 
+
+        for (let flower of flowers) {
+            flower.update(currentWind);
+            flower.display();
+        }
+    }
+
+    function windowResized() {
+        resizeCanvas(windowWidth, windowHeight);
+        initFlowers();
+    }
+
+    function easeInOutCubic(x) {
+        return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+    }
+
+    // --- 蒲公英主体 (逻辑基本不变) ---
+    class Dandelion {
+        constructor(x, startY, heightRatio, delay, scale) {
+            this.baseX = x; this.baseY = startY; this.scale = scale;
+            this.targetHeight = (height * 0.5) * scale + random(30);
+            this.maxStemLen = (startY - (height * heightRatio));
+            this.currentStemLen = 0; this.delay = delay; this.timer = 0;
+            this.state = 'waiting'; this.growProgress = 0;
+            
+            this.seeds = [];
+            let count = floor(CONFIG.baseSeedCount * scale);
+            for (let i = 0; i < count; i++) {
+                this.seeds.push(new Seed(scale));
+            }
+            // 关键：深度排序，确保后景先画，被前景遮挡
+            this.seeds.sort((a, b) => a.z - b.z);
+            
+            this.activeSeedCount = 0;
+            this.tipX = x; this.tipY = startY; this.stemBendAngle = 0;
+        }
+
+        update(wind) {
+            this.timer++;
+            if (this.timer < this.delay) return;
+            if (this.state === 'waiting') this.state = 'growing';
+            if (this.state === 'growing') {
+                this.growProgress += 0.008; 
+                if (this.growProgress >= 1) { this.growProgress = 1; this.state = 'blooming'; }
+                this.currentStemLen = this.maxStemLen * easeInOutCubic(this.growProgress);
+            }
+            let bendMagnitude = wind * (this.currentStemLen / 200) * this.scale; 
+            this.stemBendAngle = lerp(this.stemBendAngle, bendMagnitude, 0.08);
+            this.tipX = this.baseX + cos(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
+            this.tipY = this.baseY + sin(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
+
+            if (this.state === 'blooming') {
+                if (frameCount % CONFIG.bloomInterval === 0 && this.activeSeedCount < this.seeds.length) {
+                    this.seeds[this.activeSeedCount].activate();
+                    this.activeSeedCount++;
+                }
+            }
+            for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].update();
+        }
+
+        display() {
+            if (this.timer < this.delay) return;
+            noFill(); stroke(CONFIG.baseColor, 150); strokeWeight(1.5 * this.scale);
+            let midX = (this.baseX + this.tipX) / 2; let midY = (this.baseY + this.tipY) / 2;
+            let cx = midX - sin(this.stemBendAngle) * 60 * this.scale; 
+            bezier(this.baseX, this.baseY, cx, midY, cx, midY, this.tipX, this.tipY);
+
+            push();
+            translate(this.tipX, this.tipY);
+            rotate(this.stemBendAngle);
+            // 移除了外圆环，让画面更聚焦于混乱的线条
+            for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].display();
+            pop();
+        }
+    }
+
+    // --- 种子类 (核心修改区域) ---
+    class Seed {
+        constructor(scale) {
+            this.scale = scale;
+            this.baseAngle = random(TWO_PI);
+            this.targetLen = random(40, 120) * scale; 
+            this.currentLen = 0;
+            this.val = floor(random(0, 10));
+            this.z = random(-1, 1); // 深度：-1(后) 到 1(前)
+            
+            this.noiseOffset = random(1000); 
+            this.hoverSpeedOffset = random(0.8, 1.5);
+            
+            // 用于线条波动的独立噪声偏移
+            this.lineNoiseOffsetX = random(5000);
+            this.lineNoiseOffsetY = random(5000);
+            
+            this.baseCurveOffset = random(-20, 20) * scale;
+            this.isActive = false; this.growProgress = 0;
+        }
+
+        activate() { this.isActive = true; }
+
+        update() {
+            if (!this.isActive) return;
+            this.growProgress = lerp(this.growProgress, 1, 0.05);
+            this.currentLen = this.targetLen * this.growProgress;
+            if (frameCount % floor(random(60, 180)) === 0) this.val = floor(random(0, 10));
+        }
+
+        display() {
+            if (!this.isActive) return;
+
+            // 1. 计算端点的颤动 (更快、幅度更大)
+            let hoverNoise = noise(frameCount * CONFIG.hoverSpeed * this.hoverSpeedOffset + this.noiseOffset);
+            let hoverSway = map(hoverNoise, 0, 1, -CONFIG.hoverAmp, CONFIG.hoverAmp);
+            let finalAngle = this.baseAngle + hoverSway;
+
+            // 2. 视觉参数计算
+            let zFactor = map(this.z, -1, 1, 0, 1); // 0(后) -> 1(前)
+            let finalAlpha = map(zFactor, 0, 1, 30, 240) * this.growProgress; // 背景更透
+            let weight = map(zFactor, 0, 1, 0.3, 1.3) * this.scale; 
+            let size = map(zFactor, 0, 1, 10, 20) * this.scale;   
+
+            // --- 核心升级：计算高斯模糊强度 ---
+            // 只有 zFactor 小于 0.6 (偏后景) 的才应用模糊
+            // 越往后，模糊越强
+            let blurAmount = 0;
+            if (zFactor < 0.6) {
+                blurAmount = map(zFactor, 0.6, 0, 0, CONFIG.maxBlurStrength);
+            }
+
+            // 3. 计算带有呼吸感的终点坐标
+            let breathingLen = this.currentLen + map(hoverNoise, 0, 1, -5, 5);
+            let x = cos(finalAngle) * breathingLen;
+            let y = sin(finalAngle) * breathingLen;
+
+            // --- 核心升级：计算动态无序的贝塞尔控制点 ---
+            // 使用高频噪声让控制点疯狂抖动
+            let lineVolatilityX = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetX) - 0.5) * CONFIG.lineVolatilityAmp;
+            let lineVolatilityY = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetY) - 0.5) * CONFIG.lineVolatilityAmp;
+            
+            let cpLen = breathingLen * 0.5;
+            // 基础控制点位置 + 基础弯曲偏移 + 动态高频扰动
+            let cx = cos(finalAngle) * cpLen + cos(finalAngle + HALF_PI) * this.baseCurveOffset * this.growProgress + lineVolatilityX;
+            let cy = sin(finalAngle) * cpLen + sin(finalAngle + HALF_PI) * this.baseCurveOffset * this.growProgress + lineVolatilityY;
+
+            push();
+            // --- 应用高斯模糊滤镜 (如果需要) ---
+            // 这行代码是性能消耗的大户，但带来了真实的景深
+            if (blurAmount > 0.5) {
+                drawingContext.filter = `blur(${blurAmount}px)`;
+            }
+
+            // 画动态曲线
+            noFill();
+            stroke(CONFIG.baseColor, finalAlpha * 0.6);
+            strokeWeight(weight);
+            bezier(0, 0, cx, cy, cx, cy, x, y);
+
+            // 画数字
+            translate(x, y);
+            noStroke();
+            fill(CONFIG.baseColor, finalAlpha);
+            textSize(size);
+            textAlign(CENTER, CENTER);
+            text(this.val, 0, 0);
+
+            // --- 重要：重置滤镜，否则会影响后续绘制 ---
+            if (blurAmount > 0.5) {
+                drawingContext.filter = 'none';
+            }
+            pop();
+        }
+    }
+</script>
+
+</body>
+</html>
