@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V20 - Deep Space</title>
+    <title>Mitosis V21 - Static Kaomoji</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f4f4f4; }
@@ -31,7 +31,7 @@
 
 <div id="ui-container">
     <button id="blowBtn">💥 炸散 (BOOM)</button>
-    <div style="font-size:12px; color:#888; text-align:center;">V20: 极致空间感</div>
+    <div style="font-size:12px; color:#888; text-align:center;">V21: 静谧颜文字</div>
 </div>
 
 <script>
@@ -50,7 +50,8 @@
     // 颜文字池
     const KAOMOJI_LIST = [
         '(>‿<)', 'OwO', '^o^', '(o_o)', '>_<', 
-        'OuO', '*_*', 'QAQ', 'OvO', '(^_-)', 'QwQ', 'U_U'
+        'OuO', '*_*', 'QAQ', 'OvO', '(^_-)', 'QwQ', 'U_U',
+        '(~_~)', 'TnT', 'OxO', '(^_^)', '=.='
     ]; 
 
     let flowers = [];
@@ -73,15 +74,11 @@
 
     function initFlowers() {
         flowers = [];
-        // --- 核心修改：夸张的比例差异 ---
-        
-        // 1. 巨型主花 (Scale 1.7) - 放在稍低的位置，作为前景
+        // 1. 巨型主花 (前景)
         flowers.push(new Dandelion(width * 0.55, height + 100, 0.5, 0, 1.7));
-        
-        // 2. 迷你花 (Scale 0.5) - 放在远处，稍微高一点
+        // 2. 迷你花 (远景)
         flowers.push(new Dandelion(width * 0.15, height + 40, 0.75, 20, 0.5));
-        
-        // 3. 中型花 (Scale 0.9) - 正常的辅助
+        // 3. 中型花 (中景)
         flowers.push(new Dandelion(width * 0.85, height + 60, 0.6, 50, 0.9));
     }
 
@@ -99,9 +96,7 @@
         let windNoise = noise(globalWindTime) - 0.5; 
         let currentWind = windNoise * 1.0; 
 
-        // 按照 Scale 排序渲染，确保小的（远的）先画，大的（近的）后画，遮挡关系才正确
-        // 这里我们简单起见，初始化顺序已经排好了（小->中->大 绘制顺序不对，应该是 远->近）
-        // 既然我们手动添加的顺序不太对，这里做一个临时的排序渲染
+        // 简单的深度排序渲染
         let sortedFlowers = [...flowers].sort((a,b) => a.scale - b.scale);
 
         for (let flower of sortedFlowers) {
@@ -154,7 +149,6 @@
             for (let i = 0; i < count; i++) {
                 this.seeds.push(new Seed(this.scale, this.maxRadius));
             }
-            // Z轴排序
             this.seeds.sort((a, b) => a.z - b.z);
             this.activeSeedCount = 0;
         }
@@ -215,9 +209,8 @@
 
         display() {
             if (this.delayTimer > 0) return;
-            // 茎的粗细也随 Scale 变化
             noFill(); stroke(CONFIG.baseColor, 120); 
-            // 茎：近处更粗(2.5)，远处更细(0.8)
+            // 空间感：茎的粗细
             let stemWeight = map(this.scale, 0.5, 1.7, 0.8, 2.5);
             strokeWeight(stemWeight);
             
@@ -247,7 +240,10 @@
             this.maxLen = maxRadius;
             this.minLen = maxRadius * CONFIG.minReachRatio;
             this.currentLen = 0;
+            
+            // --- 核心修改：只在初始化时随机一次，之后不改了 ---
             this.val = random(KAOMOJI_LIST);
+            
             this.z = random(-1, 1); 
             this.cycleOffset = random(TWO_PI); 
             this.cycleSpeed = random(CONFIG.tentacleSpeed * 0.5, CONFIG.tentacleSpeed * 1.5); 
@@ -273,60 +269,22 @@
             this.reachFactor = easeInOutSine(cycleNorm);
             let targetCurrentLen = lerp(this.minLen, this.maxLen, this.reachFactor);
             this.currentLen = targetCurrentLen * this.growProgress;
-            if (frameCount % 120 === 0) this.val = random(KAOMOJI_LIST);
-        }
-
-        // --- 核心修改：渲染逻辑 ---
-        drawVisuals(x, y, isAirborne, speed, angle) {
-            // 计算 Z-Depth 因子 (0=最远, 1=最近)
-            let zFactor = map(this.z, -1, 1, 0, 1);
             
-            // 1. 线条粗细 (Stroke Weight)
-            // 以前是 0.5~1.4。现在夸张化：
-            // 远处的极细 (0.2)，近处的极粗 (2.5)
-            // 还要乘上植物本身的 scale，巨型植物的线条整体更粗
-            let dynamicWeight = map(zFactor, 0, 1, 0.2, 2.5) * this.scale;
-            
-            // 2. 透明度 (Alpha)
-            // 远处的稍微淡一点，模拟大气透视
-            let alpha = map(zFactor, 0, 1, 120, 255);
-            
-            // 3. 字体大小
-            let fontSize = map(zFactor, 0, 1, 10, 18) * this.scale;
-
-            // 绘制尾巴
-            noFill();
-            stroke(CONFIG.baseColor, alpha * 0.6);
-            strokeWeight(dynamicWeight);
-
-            if (isAirborne) {
-                let stretch = constrain(speed * 2, 0, 40);
-                let wag = (speed > 3) ? 0 : sin(frameCount * 0.2 + this.floatOffset) * 4;
-                let controlY = (speed > 3) ? 1 : 5;
-                bezier(0, 0, -5 - stretch, controlY, -10 - stretch + wag, controlY, -15 - stretch, 0);
-            } else {
-                // 生长在花上的贝塞尔曲线
-                // 这里为了性能稍微简化计算，直接用预存的参数画
-                // 注意：在 displayAttached 里并没有传入具体的控制点，为了保持代码结构，
-                // 我们把 displayAttached 的绘图逻辑搬回来，或者只在这里处理通用属性
-                // 为了代码整洁，我们还是在各自的 display 函数里画线，只用这里计算权重
-            }
-            return { weight: dynamicWeight, alpha: alpha, size: fontSize, zFactor: zFactor };
+            // 已删除：frameCount % 120 的随机变换逻辑
         }
 
         displayAttached() {
             let finalAngle = this.baseAngle;
             let zFactor = map(this.z, -1, 1, 0, 1);
             
-            // --- 空间感参数 ---
-            let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale; // 线条极细到极粗
-            let size = map(zFactor, 0, 1, 8, 20) * this.scale;     // 字号跨度变大
-            let alpha = map(zFactor, 0, 1, 100, 255);              // 远处变淡
+            // --- 空间感：粗细对比 ---
+            let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale; 
+            let size = map(zFactor, 0, 1, 8, 20) * this.scale;     
+            let alpha = map(zFactor, 0, 1, 100, 255);              
 
             let x = cos(finalAngle) * this.currentLen;
             let y = sin(finalAngle) * this.currentLen;
 
-            // 贝塞尔曲线逻辑
             let slackFactor = 1.0 - this.reachFactor;
             let noiseBend = noise(frameCount * 0.01 + this.slackNoise) * 0.5 + 0.5;
             let currentCurveAmount = CONFIG.maxCurveSlack * slackFactor * noiseBend * this.scale * this.growProgress * this.curveDir;
@@ -347,15 +305,13 @@
             let wobble = sin(frameCount * 0.1 + this.cycleOffset) * 0.2;
             rotate(wobble); 
             
-            // --- 核心：字体描边模拟加粗 ---
+            // --- 空间感：近处描边(粗体)，远处不描边(细体) ---
             if (zFactor > 0.6) {
-                // 如果是靠前的元素，给文字加描边，让它看起来更粗 (Bold)
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
                 stroke(CONFIG.baseColor, alpha);
                 strokeWeight(textStrokeW);
                 fill(CONFIG.baseColor, alpha);
             } else {
-                // 远处的只填充，不描边，看起来细 (Light)
                 noStroke();
                 fill(CONFIG.baseColor, alpha);
             }
@@ -381,7 +337,6 @@
 
         displayAirborne() {
             let zFactor = map(this.z, -1, 1, 0, 1); 
-            // 空间感参数
             let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale;
             let size = map(zFactor, 0, 1, 8, 20) * this.scale;
             let alpha = map(zFactor, 0, 1, 100, 255);
@@ -403,14 +358,13 @@
             
             noFill();
             stroke(CONFIG.baseColor, alpha * 0.5);
-            strokeWeight(weight); // 使用计算出的粗细
+            strokeWeight(weight);
             
             let wag = (speed > 3) ? 0 : sin(frameCount * 0.2 + this.floatOffset) * 4;
             let controlY = (speed > 3) ? 1 : 5;
 
             bezier(0, 0, -5 - stretch, controlY, -10 - stretch + wag, controlY, -15 - stretch, 0);
             
-            // --- 字体描边模拟加粗 ---
             if (zFactor > 0.6) {
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
                 stroke(CONFIG.baseColor, alpha);
