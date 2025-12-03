@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V17 - High Performance</title>
+    <title>Mitosis V18 - Chinese Characters</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; }
@@ -12,7 +12,7 @@
             position: absolute; top: 20px; left: 20px;
             background: rgba(255, 255, 255, 0.9);
             padding: 15px; border-radius: 8px;
-            font-family: 'Courier New', monospace;
+            font-family: sans-serif; /* 界面也用无衬线字体 */
             box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 100;
             display: flex; flex-direction: column; gap: 10px;
             width: 200px;
@@ -20,7 +20,7 @@
         button {
             padding: 12px 0; cursor: pointer;
             background: #222; color: #fff; border: none;
-            border-radius: 4px; font-weight: bold;
+            border-radius: 4px; font-weight: bold; font-size: 14px;
             transition: transform 0.1s;
         }
         button:hover { background: #444; }
@@ -30,25 +30,26 @@
 <body>
 
 <div id="ui-container">
-    <button id="blowBtn">💥 极致流畅爆发</button>
-    <div style="font-size:12px; color:#666; text-align:center;">已移除高斯模糊以提升FPS</div>
+    <button id="blowBtn">💥 炸散 (EXPLODE)</button>
+    <div style="font-size:12px; color:#666; text-align:center;">高性能版 - 无卡顿</div>
 </div>
 
 <script>
     const CONFIG = {
-        // 性能平衡：稍微减少一点数量，但因为不卡了，视觉看起来会更多
         baseSeedCount: 45,        
         bloomInterval: 1,         
-        baseColor: 20,            
+        baseColor: 30,            
         windSpeed: 0.005,
-        
-        // 移除 blurStrength 参数，改用透明度模拟
         
         tentacleSpeed: 0.02,
         minReachRatio: 0.4,
         maxCurveSlack: 100,
         regrowDelay: 90 
     };
+    
+    //在这里定义你要显示的字
+    //如果你是想写“蒲公英”，可以在这里把 '莹' 改成 '英'
+    const CHAR_LIST = ['蒲', '公', '莹']; 
 
     let flowers = [];
     let airborneSeeds = []; 
@@ -56,11 +57,12 @@
     let blowBtn;
 
     function setup() {
-        // 使用 P2D 渲染模式通常比默认模式快，但在某些浏览器上可能兼容性不同
-        // 这里保持默认，依靠逻辑优化
         createCanvas(windowWidth, windowHeight);
-        pixelDensity(1); // 强制 1倍像素密度，防止视网膜屏幕（手机/Mac）按4倍像素渲染导致卡顿
-        textFont('Courier New, monospace'); 
+        pixelDensity(1); 
+        // 使用更适合中文的字体栈
+        textFont("'Microsoft YaHei', 'PingFang SC', sans-serif"); 
+        // 稍微加粗一点让字看清楚
+        textStyle(BOLD);
         frameRate(60); 
         
         blowBtn = document.getElementById('blowBtn');
@@ -86,13 +88,10 @@
         clear();
         background('#f0f0f0');
         
-        // 移除 DOM 读取操作，减少每一帧的开销
-        // 假设风力是固定的或者由程序内部控制
         globalWindTime += CONFIG.windSpeed;
         let windNoise = noise(globalWindTime) - 0.5; 
         let currentWind = windNoise * 1.0; 
 
-        // 优化循环：使用倒序循环不仅方便删除，在JS中通常也微快一点
         for (let i = 0; i < flowers.length; i++) {
             flowers[i].update(currentWind);
             flowers[i].display();
@@ -104,9 +103,8 @@
                 seed.updateAirborne();
                 seed.displayAirborne();
 
-                // 屏幕外检查优化：稍微放宽边界，避免边界闪烁，但尽早删除
-                if (seed.pos.x > width + 100 || seed.pos.x < -100 || 
-                    seed.pos.y > height + 100 || seed.pos.y < -500) {
+                if (seed.pos.x > width + 200 || seed.pos.x < -200 || 
+                    seed.pos.y > height + 200 || seed.pos.y < -500) {
                     airborneSeeds.splice(i, 1);
                 }
             }
@@ -144,9 +142,7 @@
             for (let i = 0; i < count; i++) {
                 this.seeds.push(new Seed(this.scale, this.maxRadius));
             }
-            // Z轴排序保留，为了视觉正确
             this.seeds.sort((a, b) => a.z - b.z);
-            // 标记这几个需要"虚化"（实际上是降低透明度）
             let blurCount = min(this.seeds.length, 6);
             for (let i = 0; i < blurCount; i++) this.seeds[i].isBackground = true;
             this.activeSeedCount = 0;
@@ -164,7 +160,6 @@
                 
                 s.pos = createVector(this.tipX + rotatedX, this.tipY + rotatedY);
                 let burstDir = p5.Vector.fromAngle(finalAngle + this.stemBendAngle);
-                // 保持暴力速度
                 let explosionForce = random(25, 55); 
                 s.vel = burstDir.mult(explosionForce);
                 airborneSeeds.push(s);
@@ -236,9 +231,12 @@
             this.maxLen = maxRadius;
             this.minLen = maxRadius * CONFIG.minReachRatio;
             this.currentLen = 0;
-            this.val = floor(random(0, 10));
+            
+            // --- 修改：从字符数组中随机选择 ---
+            this.val = random(CHAR_LIST);
+            
             this.z = random(-1, 1); 
-            this.isBackground = false; // 替代 needsBlur
+            this.isBackground = false; 
             this.cycleOffset = random(TWO_PI); 
             this.cycleSpeed = random(CONFIG.tentacleSpeed * 0.5, CONFIG.tentacleSpeed * 1.5); 
             this.curveDir = random() > 0.5 ? 1 : -1;
@@ -263,21 +261,24 @@
             this.reachFactor = easeInOutSine(cycleNorm);
             let targetCurrentLen = lerp(this.minLen, this.maxLen, this.reachFactor);
             this.currentLen = targetCurrentLen * this.growProgress;
-            if (frameCount % 60 === 0) this.val = floor(random(0, 10)); // 降低数字变化频率
+            
+            // 偶尔变换文字，增加闪烁感
+            if (frameCount % 60 === 0) {
+                this.val = random(CHAR_LIST);
+            }
         }
 
         displayAttached() {
             let finalAngle = this.baseAngle;
             let zFactor = map(this.z, -1, 1, 0, 1); 
             
-            // 性能优化核心：用透明度代替高斯模糊
-            // 如果原本需要模糊(isBackground)，大幅降低Alpha值
             let baseAlpha = this.isBackground ? 40 : map(zFactor, 0, 1, 150, 255);
             let dynamicAlpha = baseAlpha * map(this.reachFactor, 0, 1, 0.7, 1.0);
             let finalAlpha = dynamicAlpha * this.growProgress;
 
             let weight = map(zFactor, 0, 1, 0.5, 1.4) * this.scale; 
-            let size = map(zFactor, 0, 1, 12, 22) * this.scale;   
+            // 稍微调大字体，因为汉字比数字复杂
+            let size = map(zFactor, 0, 1, 14, 24) * this.scale;   
             let x = cos(finalAngle) * this.currentLen;
             let y = sin(finalAngle) * this.currentLen;
 
@@ -285,7 +286,6 @@
             let noiseBend = noise(frameCount * 0.01 + this.slackNoise) * 0.5 + 0.5;
             let currentCurveAmount = CONFIG.maxCurveSlack * slackFactor * noiseBend * this.scale * this.growProgress * this.curveDir;
             
-            // 简化计算：只计算一次正余弦
             let cAngle = cos(finalAngle);
             let sAngle = sin(finalAngle);
             let tanX = -sAngle; let tanY = cAngle;
@@ -297,12 +297,16 @@
             let cx2 = cAngle * cp2Rad + tanX * currentCurveAmount * 0.8;
             let cy2 = sAngle * cp2Rad + tanY * currentCurveAmount * 0.8;
             
-            // 绝对不要调用 drawingContext.filter
             noFill(); stroke(CONFIG.baseColor, finalAlpha * 0.6); strokeWeight(weight);
             bezier(0, 0, cx1, cy1, cx2, cy2, x, y);
             
-            push(); // 仅对文字位移
+            push(); 
             translate(x, y);
+            // 修正文字旋转：让汉字始终保持大致竖直，或者轻微随角度旋转
+            // 汉字如果完全旋转可能会看不清，这里稍微保留一点跟随角度
+            // 但如果喜欢“正”的字，可以注释掉 rotate
+            // rotate(finalAngle + HALF_PI); 
+            
             noStroke(); fill(CONFIG.baseColor, finalAlpha);
             textSize(size); textAlign(CENTER, CENTER);
             text(this.val, 0, 0);
@@ -311,13 +315,11 @@
 
         updateAirborne() {
             let speed = this.vel.mag();
-            this.vel.mult(0.92); // 阻力
+            this.vel.mult(0.92); 
             
-            // 漂浮逻辑
             if (speed < 4) {
-                // 减少 noise 调用频率或复杂度（这里保持原样因为已经很快了）
-                let turbulence = p5.Vector.random2D().mult(0.05); // 简化流场计算为简单抖动
-                let steadyWind = createVector(0.05, -0.02); // 简化风力
+                let turbulence = p5.Vector.random2D().mult(0.05);
+                let steadyWind = createVector(0.05, -0.02); 
                 let gravity = createVector(0, 0.05);
                 this.vel.add(turbulence).add(steadyWind).add(gravity);
             }
@@ -328,9 +330,8 @@
 
         displayAirborne() {
             let zFactor = map(this.z, -1, 1, 0, 1); 
-            // 性能优化：模糊 = 更透明
             let alpha = this.isBackground ? 50 : 200;
-            let size = map(zFactor, 0, 1, 12, 22) * this.scale;
+            let size = map(zFactor, 0, 1, 14, 24) * this.scale;
             let speed = this.vel.mag();
 
             push();
@@ -339,14 +340,11 @@
             if (speed > 2) rotate(this.vel.heading());
             else rotate(this.angle); 
 
-            // 彻底移除 blur 滤镜
-            
             let stretch = constrain(speed * 2, 0, 40); 
             noFill();
             stroke(CONFIG.baseColor, alpha * 0.5);
             strokeWeight(0.5);
             
-            // 只有速度慢的时候才计算 sin 摆动，速度快时直接画直的
             let wag = (speed > 3) ? 0 : sin(frameCount * 0.2 + this.floatOffset) * 4;
             let controlY = (speed > 3) ? 1 : 5;
 
