@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V21 - Static Kaomoji</title>
+    <title>Mitosis V22 - Control & Clean</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f4f4f4; }
@@ -14,24 +14,43 @@
             padding: 15px; border-radius: 12px;
             font-family: 'Segoe UI Emoji', 'Arial', sans-serif;
             box-shadow: 0 4px 15px rgba(0,0,0,0.08); z-index: 100;
-            display: flex; flex-direction: column; gap: 10px;
-            width: 200px;
+            display: flex; flex-direction: column; gap: 12px;
+            width: 220px;
         }
+        label { font-size: 12px; font-weight: bold; color: #555; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #333; }
+        
+        /* 按钮容器 */
+        .btn-group { display: flex; gap: 10px; }
+        
         button {
-            padding: 12px 0; cursor: pointer;
-            background: #333; color: #fff; border: none;
-            border-radius: 6px; font-weight: bold; font-size: 14px;
-            transition: all 0.2s;
+            flex: 1;
+            padding: 10px 0; cursor: pointer;
+            border: none; border-radius: 6px; 
+            font-weight: bold; font-size: 13px;
+            color: #fff; transition: all 0.2s;
         }
-        button:hover { background: #555; transform: scale(1.02); }
+        #blowBtn { background: #333; }
+        #blowBtn:hover { background: #555; transform: scale(1.02); }
+        
+        #clearBtn { background: #888; }
+        #clearBtn:hover { background: #aaa; transform: scale(1.02); }
+        
         button:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
-    <button id="blowBtn">💥 炸散 (BOOM)</button>
-    <div style="font-size:12px; color:#888; text-align:center;">V21: 静谧颜文字</div>
+    <div>
+        <label>💨 风速控制 (Wind Speed)</label>
+        <input type="range" id="windSlider" min="0" max="5" step="0.1" value="1.0">
+    </div>
+    
+    <div class="btn-group">
+        <button id="blowBtn">💥 炸散</button>
+        <button id="clearBtn">🧹 清空</button>
+    </div>
 </div>
 
 <script>
@@ -39,7 +58,7 @@
         baseSeedCount: 45,        
         bloomInterval: 1,         
         baseColor: 40,            
-        windSpeed: 0.005,
+        windSpeed: 0.005,         // 风场随时间变化的速率
         
         tentacleSpeed: 0.02,
         minReachRatio: 0.4,
@@ -47,7 +66,6 @@
         regrowDelay: 100 
     };
     
-    // 颜文字池
     const KAOMOJI_LIST = [
         '(>‿<)', 'OwO', '^o^', '(o_o)', '>_<', 
         'OuO', '*_*', 'QAQ', 'OvO', '(^_-)', 'QwQ', 'U_U',
@@ -57,7 +75,7 @@
     let flowers = [];
     let airborneSeeds = []; 
     let globalWindTime = 0;
-    let blowBtn;
+    let windSlider, blowBtn, clearBtn;
 
     function setup() {
         createCanvas(windowWidth, windowHeight);
@@ -66,20 +84,26 @@
         textStyle(NORMAL);
         frameRate(60); 
         
+        // 获取UI元素
+        windSlider = document.getElementById('windSlider');
         blowBtn = document.getElementById('blowBtn');
+        clearBtn = document.getElementById('clearBtn');
+        
         blowBtn.addEventListener('click', triggerExplosion);
+        
+        // --- 清空功能 ---
+        clearBtn.addEventListener('click', () => {
+            airborneSeeds = []; // 直接清空飞行数组
+        });
 
         initFlowers();
     }
 
     function initFlowers() {
         flowers = [];
-        // 1. 巨型主花 (前景)
-        flowers.push(new Dandelion(width * 0.55, height + 100, 0.5, 0, 1.7));
-        // 2. 迷你花 (远景)
-        flowers.push(new Dandelion(width * 0.15, height + 40, 0.75, 20, 0.5));
-        // 3. 中型花 (中景)
-        flowers.push(new Dandelion(width * 0.85, height + 60, 0.6, 50, 0.9));
+        flowers.push(new Dandelion(width * 0.55, height + 100, 0.5, 0, 1.7)); // 巨型前景
+        flowers.push(new Dandelion(width * 0.15, height + 40, 0.75, 20, 0.5)); // 迷你远景
+        flowers.push(new Dandelion(width * 0.85, height + 60, 0.6, 50, 0.9));  // 中型中景
     }
 
     function triggerExplosion() {
@@ -92,26 +116,32 @@
         clear();
         background('#f4f4f4');
         
+        // 获取当前滑块的风力值
+        let userWindForce = parseFloat(windSlider.value);
+        
         globalWindTime += CONFIG.windSpeed;
         let windNoise = noise(globalWindTime) - 0.5; 
-        let currentWind = windNoise * 1.0; 
+        
+        // 地面植物受到的风力（稍微弱一点，不然植物会弯得太厉害）
+        let plantWind = windNoise * userWindForce * 0.5; 
 
         // 简单的深度排序渲染
         let sortedFlowers = [...flowers].sort((a,b) => a.scale - b.scale);
 
         for (let flower of sortedFlowers) {
-            flower.update(currentWind);
+            flower.update(plantWind);
             flower.display();
         }
 
         if (airborneSeeds.length > 0) {
             for (let i = airborneSeeds.length - 1; i >= 0; i--) {
                 let seed = airborneSeeds[i];
-                seed.updateAirborne();
+                // 将滑块风力传给飞行粒子
+                seed.updateAirborne(userWindForce);
                 seed.displayAirborne();
 
-                if (seed.pos.x > width + 300 || seed.pos.x < -300 || 
-                    seed.pos.y > height + 300 || seed.pos.y < -500) {
+                if (seed.pos.x > width + 400 || seed.pos.x < -400 || 
+                    seed.pos.y > height + 400 || seed.pos.y < -600) {
                     airborneSeeds.splice(i, 1);
                 }
             }
@@ -210,7 +240,6 @@
         display() {
             if (this.delayTimer > 0) return;
             noFill(); stroke(CONFIG.baseColor, 120); 
-            // 空间感：茎的粗细
             let stemWeight = map(this.scale, 0.5, 1.7, 0.8, 2.5);
             strokeWeight(stemWeight);
             
@@ -240,10 +269,7 @@
             this.maxLen = maxRadius;
             this.minLen = maxRadius * CONFIG.minReachRatio;
             this.currentLen = 0;
-            
-            // --- 核心修改：只在初始化时随机一次，之后不改了 ---
             this.val = random(KAOMOJI_LIST);
-            
             this.z = random(-1, 1); 
             this.cycleOffset = random(TWO_PI); 
             this.cycleSpeed = random(CONFIG.tentacleSpeed * 0.5, CONFIG.tentacleSpeed * 1.5); 
@@ -269,15 +295,11 @@
             this.reachFactor = easeInOutSine(cycleNorm);
             let targetCurrentLen = lerp(this.minLen, this.maxLen, this.reachFactor);
             this.currentLen = targetCurrentLen * this.growProgress;
-            
-            // 已删除：frameCount % 120 的随机变换逻辑
         }
 
         displayAttached() {
             let finalAngle = this.baseAngle;
             let zFactor = map(this.z, -1, 1, 0, 1);
-            
-            // --- 空间感：粗细对比 ---
             let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale; 
             let size = map(zFactor, 0, 1, 8, 20) * this.scale;     
             let alpha = map(zFactor, 0, 1, 100, 255);              
@@ -305,7 +327,6 @@
             let wobble = sin(frameCount * 0.1 + this.cycleOffset) * 0.2;
             rotate(wobble); 
             
-            // --- 空间感：近处描边(粗体)，远处不描边(细体) ---
             if (zFactor > 0.6) {
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
                 stroke(CONFIG.baseColor, alpha);
@@ -321,12 +342,13 @@
             pop();
         }
 
-        updateAirborne() {
+        updateAirborne(windForce) {
             let speed = this.vel.mag();
             this.vel.mult(0.92); 
             if (speed < 4) {
                 let turbulence = p5.Vector.random2D().mult(0.05);
-                let steadyWind = createVector(0.05, -0.02); 
+                // 使用传入的 windForce 影响漂浮
+                let steadyWind = createVector(0.05 * windForce, -0.02); 
                 let gravity = createVector(0, 0.05);
                 this.vel.add(turbulence).add(steadyWind).add(gravity);
             }
