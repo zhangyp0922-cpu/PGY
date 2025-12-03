@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V23 - Cinematic DoF</title>
+    <title>Mitosis V24 - Lifespan Optimization</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; }
@@ -11,7 +11,7 @@
         #ui-container {
             position: absolute; top: 20px; left: 20px;
             background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(10px); /* UI本身的磨砂玻璃效果 */
+            backdrop-filter: blur(10px);
             padding: 15px; border-radius: 12px;
             font-family: 'Segoe UI Emoji', 'Arial', sans-serif;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1); z-index: 100;
@@ -46,6 +46,9 @@
         <button id="blowBtn">💥 炸散</button>
         <button id="clearBtn">🧹 清空</button>
     </div>
+    <div style="font-size:11px; color:#888; margin-top:5px; text-align:center;">
+        *粒子将自动消散以优化性能
+    </div>
 </div>
 
 <script>
@@ -60,9 +63,15 @@
         maxCurveSlack: 100,
         regrowDelay: 100,
         
-        // 景深参数
-        blurThreshold: 0.4, // zFactor 小于这个值的会被模糊
-        blurAmount: '4px'   // 模糊强度
+        // --- 性能优化核心配置 ---
+        blurThreshold: 0.4, 
+        blurAmount: '4px',
+        
+        // 生命周期配置 (帧数)
+        // 60帧 ≈ 1秒
+        minLifespan: 180,  // 最短存活 3秒
+        maxLifespan: 300,  // 最长存活 5秒
+        fadeDuration: 60   // 最后 1秒用于渐隐
     };
     
     const KAOMOJI_LIST = [
@@ -77,7 +86,6 @@
     let windSlider, blowBtn, clearBtn;
 
     function setup() {
-        // 使用 P2D 模式以获得更好的性能（部分浏览器）
         createCanvas(windowWidth, windowHeight, P2D);
         pixelDensity(1); 
         textFont("Arial, sans-serif"); 
@@ -96,16 +104,8 @@
 
     function initFlowers() {
         flowers = [];
-        // 参数：x, y, heightRatio, delay, scale
-        // Scale 决定了它们在场景中的"远近"（虽然是模拟的）
-        
-        // 1. 远景花 (Scale 0.5) - 应该被模糊
         flowers.push(new Dandelion(width * 0.15, height + 40, 0.75, 20, 0.5)); 
-        
-        // 2. 中景花 (Scale 0.9) - 清晰
         flowers.push(new Dandelion(width * 0.85, height + 60, 0.6, 50, 0.9));
-        
-        // 3. 近景巨型花 (Scale 1.7) - 清晰且加粗
         flowers.push(new Dandelion(width * 0.55, height + 100, 0.5, 0, 1.7)); 
     }
 
@@ -115,7 +115,6 @@
         }
     }
 
-    // --- 核心渲染循环 ---
     function draw() {
         clear();
         background('#f0f0f0');
@@ -125,38 +124,33 @@
         let windNoise = noise(globalWindTime) - 0.5; 
         let plantWind = windNoise * userWindForce * 0.5; 
 
-        // 1. 更新逻辑 (不绘图，只计算位置)
-        // ----------------------------------------
+        // 1. 更新逻辑
         for (let flower of flowers) flower.update(plantWind);
         
-        // 移除飞出屏幕的种子
+        // 倒序遍历，方便删除
         for (let i = airborneSeeds.length - 1; i >= 0; i--) {
             let seed = airborneSeeds[i];
             seed.updateAirborne(userWindForce);
-            if (seed.pos.x > width + 400 || seed.pos.x < -400 || 
-                seed.pos.y > height + 400 || seed.pos.y < -600) {
+            
+            // 删除条件：飞出屏幕 OR 寿命耗尽
+            // isDead() 方法现在包含了寿命检测
+            if (seed.isDead()) {
                 airborneSeeds.splice(i, 1);
             }
         }
 
-        // 2. 分层渲染队列准备
-        // ----------------------------------------
+        // 2. 渲染准备 (分层)
         let bgRenderList = [];
         let fgRenderList = [];
 
-        // (A) 处理还长在地上的花朵
         for (let flower of flowers) {
-            // 如果 scale 小于 0.6，视为背景花朵
             if (flower.scale < 0.6) bgRenderList.push({type: 'flower', obj: flower});
             else fgRenderList.push({type: 'flower', obj: flower});
         }
 
-        // (B) 处理飞行的种子 (根据 Z 轴排序分层)
-        // 先排序，确保遮挡关系正确
         airborneSeeds.sort((a, b) => a.z - b.z);
         
         for (let seed of airborneSeeds) {
-            // 归一化Z值: -1~1 -> 0~1
             let zFactor = map(seed.z, -1, 1, 0, 1);
             if (zFactor < CONFIG.blurThreshold) {
                 bgRenderList.push({type: 'seed', obj: seed});
@@ -165,31 +159,26 @@
             }
         }
 
-        // 3. 批量绘制 (Batch Rendering) - 性能优化的关键
-        // ----------------------------------------
-        
-        // [Pass 1] 绘制后景 (开启模糊)
+        // 3. 批量渲染
         push();
-        // 只有当有东西需要画在背景时才开启模糊，节省开销
         if (bgRenderList.length > 0) {
             drawingContext.filter = `blur(${CONFIG.blurAmount})`;
             for (let item of bgRenderList) {
                 if (item.type === 'flower') item.obj.display();
-                else item.obj.displayAirborne(); // 飞行中的
+                else item.obj.displayAirborne(); 
             }
         }
-        pop(); // 自动关闭滤镜
+        pop();
 
-        // [Pass 2] 绘制前景 (无模糊，保持清晰锐利)
-        // 确保按照 scale 从小到大排序前景花朵，保证遮挡正确
         let sortedFgFlowers = fgRenderList.filter(i => i.type === 'flower').sort((a,b) => a.obj.scale - b.obj.scale);
-        
         for (let item of sortedFgFlowers) item.obj.display();
-        
-        // 绘制前景种子
         for (let item of fgRenderList) {
             if (item.type === 'seed') item.obj.displayAirborne();
         }
+        
+        // (可选) 调试信息：显示当前粒子数，让你安心
+        // fill(0); noStroke(); textSize(12); textAlign(LEFT, TOP);
+        // text("Particles: " + airborneSeeds.length, 10, 10);
     }
 
     function windowResized() {
@@ -201,7 +190,6 @@
         return -(Math.cos(Math.PI * x) - 1) / 2;
     }
 
-    // --- Dandelion Class ---
     class Dandelion {
         constructor(x, startY, heightRatio, delay, scale) {
             this.baseX = x; this.baseY = startY; this.scale = scale;
@@ -224,7 +212,6 @@
             for (let i = 0; i < count; i++) {
                 this.seeds.push(new Seed(this.scale, this.maxRadius));
             }
-            // Z轴排序
             this.seeds.sort((a, b) => a.z - b.z);
             this.activeSeedCount = 0;
         }
@@ -297,7 +284,6 @@
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
             if (this.state !== 'blown' && this.activeSeedCount > 5) {
-                // 如果是前景花朵，给外轮廓稍微加重一点
                 let alpha = this.scale > 0.6 ? 40 : 20;
                 noFill(); stroke(CONFIG.baseColor, alpha); strokeWeight(0.8);
                 let r = this.maxRadius * this.growProgress;
@@ -331,6 +317,11 @@
             this.angle = 0;
             this.angleVel = random(-0.1, 0.1); 
             this.floatOffset = random(100); 
+
+            // --- 生命周期初始化 ---
+            // 给每个粒子随机分配寿命，避免大家同时消失太突兀
+            this.lifespan = random(CONFIG.minLifespan, CONFIG.maxLifespan);
+            this.initialLifespan = this.lifespan; // 记住初始值用于计算百分比（可选）
         }
 
         activate() { this.isActive = true; }
@@ -375,7 +366,6 @@
             let wobble = sin(frameCount * 0.1 + this.cycleOffset) * 0.2;
             rotate(wobble); 
             
-            // 字体描边增强近处质感
             if (zFactor > 0.6 && this.scale > 0.6) {
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
                 stroke(CONFIG.baseColor, alpha);
@@ -392,6 +382,10 @@
         }
 
         updateAirborne(windForce) {
+            // 1. 生命周期递减
+            this.lifespan--;
+
+            // 2. 物理运动
             let speed = this.vel.mag();
             this.vel.mult(0.92); 
             if (speed < 4) {
@@ -409,7 +403,18 @@
             let zFactor = map(this.z, -1, 1, 0, 1); 
             let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale;
             let size = map(zFactor, 0, 1, 8, 20) * this.scale;
-            let alpha = map(zFactor, 0, 1, 100, 255);
+            let baseAlpha = map(zFactor, 0, 1, 100, 255);
+
+            // --- 渐隐核心逻辑 ---
+            let fadeAlpha = 1.0;
+            // 如果剩余寿命小于淡出时间，开始计算透明度比例
+            if (this.lifespan < CONFIG.fadeDuration) {
+                fadeAlpha = this.lifespan / CONFIG.fadeDuration;
+                // 防止出现负数
+                if (fadeAlpha < 0) fadeAlpha = 0;
+            }
+            // 最终透明度 = 距离透明度 * 渐隐系数
+            let finalAlpha = baseAlpha * fadeAlpha;
 
             let speed = this.vel.mag();
 
@@ -427,7 +432,8 @@
             let stretch = constrain(speed * 2, 0, 40); 
             
             noFill();
-            stroke(CONFIG.baseColor, alpha * 0.5);
+            // 线条也要跟着透明
+            stroke(CONFIG.baseColor, finalAlpha * 0.5);
             strokeWeight(weight);
             
             let wag = (speed > 3) ? 0 : sin(frameCount * 0.2 + this.floatOffset) * 4;
@@ -437,12 +443,12 @@
             
             if (zFactor > 0.6 && this.scale > 0.6) {
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
-                stroke(CONFIG.baseColor, alpha);
+                stroke(CONFIG.baseColor, finalAlpha);
                 strokeWeight(textStrokeW);
-                fill(CONFIG.baseColor, alpha);
+                fill(CONFIG.baseColor, finalAlpha);
             } else {
                 noStroke();
-                fill(CONFIG.baseColor, alpha);
+                fill(CONFIG.baseColor, finalAlpha);
             }
 
             textSize(size);
@@ -450,6 +456,16 @@
             text(this.val, 0, 0);
 
             pop();
+        }
+
+        isDead() {
+            // 条件1: 飞出屏幕太远
+            let outOfBounds = (this.pos.x > width + 400 || this.pos.x < -400 || 
+                               this.pos.y > height + 400 || this.pos.y < -600);
+            // 条件2: 寿命耗尽
+            let expired = (this.lifespan <= 0);
+            
+            return outOfBounds || expired;
         }
     }
 </script>
