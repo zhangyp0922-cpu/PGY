@@ -3,150 +3,257 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Targeted Blur & Chaotic Lines V10</title>
+    <title>Mitosis Tentacles V15 - Radial Explosion</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #e8e8e8; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f2f2f2; }
         canvas { display: block; }
-
         #ui-container {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 15px; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(5px);
+            padding: 15px; border-radius: 12px;
             font-family: 'Courier New', monospace;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); z-index: 100;
+            display: flex; flex-direction: column; gap: 12px;
+            width: 220px;
         }
-        label { font-size: 14px; font-weight: bold; color: #333; }
-        input[type=range] { width: 200px; cursor: pointer; display: block; margin-top: 5px;}
+        label { font-size: 12px; font-weight: bold; color: #555; letter-spacing: 1px; text-transform: uppercase;}
+        input[type=range] { width: 100%; cursor: pointer; display: block; accent-color: #333;}
+        button {
+            padding: 12px 0; cursor: pointer;
+            background: #222; color: #fff; border: none;
+            border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: bold;
+            transition: all 0.1s;
+        }
+        button:hover { background: #444; transform: scale(1.02); }
+        button:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
-    <label>风力控制 (Wind)</label>
-    <input type="range" id="windSlider" min="0" max="2" step="0.01" value="0.5">
+    <div>
+        <label>Wind Force (漂浮风力)</label>
+        <input type="range" id="windSlider" min="0" max="3" step="0.01" value="0.5">
+    </div>
+    <button id="blowBtn">💥 炸 散 (EXPLODE)</button>
 </div>
 
 <script>
     const CONFIG = {
-        baseSeedCount: 50,       
-        bloomInterval: 2,
-        baseColor: 20,            
+        baseSeedCount: 50,        
+        bloomInterval: 1,         
+        baseColor: 30,            
         windSpeed: 0.005,
         
-        // --- 核心配置更新 ---
-        seedsToBlurPerFlower: 6,   // 每朵花只模糊最靠后的6个数字 (控制在低位以保性能)
-        blurStrength: 8,           // 模糊强度
+        seedsToBlurPerFlower: 5,
+        blurStrength: 6,
         
-        // 动态参数
-        hoverSpeed: 0.04,
-        hoverAmp: 0.15,
-        lineVolatilitySpeed: 0.05, 
-        lineChaosAmp: 80           // 大幅增加线条的混乱弯曲程度
+        tentacleSpeed: 0.02,
+        minReachRatio: 0.4,
+        maxCurveSlack: 100,
+
+        // 炸散后的再生时间
+        regrowDelay: 140 
     };
 
     let flowers = [];
+    let airborneSeeds = []; 
     let globalWindTime = 0;
-    let windSlider;
+    let windSlider, blowBtn;
 
     function setup() {
         createCanvas(windowWidth, windowHeight, P2D);
-        // 保持低像素密度以确保最佳性能
         pixelDensity(1);
-        
         textFont('Courier New, monospace'); 
         frameRate(60); 
+        
         windSlider = document.getElementById('windSlider');
+        blowBtn = document.getElementById('blowBtn');
+        blowBtn.addEventListener('click', triggerExplosion);
+
         initFlowers();
     }
 
     function initFlowers() {
         flowers = [];
-        flowers.push(new Dandelion(width * 0.5, height + 80, 0.45, 0, 1.3));
-        flowers.push(new Dandelion(width * 0.2, height + 60, 0.6, 60, 0.7));
-        flowers.push(new Dandelion(width * 0.8, height + 70, 0.55, 120, 0.9));
+        flowers.push(new Dandelion(width * 0.5, height + 80, 0.5, 0, 1.2));
+        flowers.push(new Dandelion(width * 0.2, height + 60, 0.65, 40, 0.7));
+        flowers.push(new Dandelion(width * 0.8, height + 70, 0.55, 80, 0.9));
+    }
+
+    function triggerExplosion() {
+        // 点击按钮时，触发所有花朵的爆炸方法
+        for (let flower of flowers) {
+            flower.explode();
+        }
     }
 
     function draw() {
         clear();
-        background('#e8e8e8'); 
+        background('#f2f2f2');
         
         let userWindForce = parseFloat(windSlider.value);
         globalWindTime += CONFIG.windSpeed;
-        let windNoise = noise(globalWindTime) - 0.5;
+        
+        let windNoise = noise(globalWindTime) - 0.5; 
         let currentWind = windNoise * userWindForce; 
 
+        // 1. 更新花朵 (茎和未炸开的部分)
         for (let flower of flowers) {
             flower.update(currentWind);
             flower.display();
+        }
+
+        // 2. 更新飞舞的种子 (物理粒子系统)
+        if (airborneSeeds.length > 0) {
+            for (let i = airborneSeeds.length - 1; i >= 0; i--) {
+                let seed = airborneSeeds[i];
+                seed.updateAirborne(userWindForce);
+                seed.displayAirborne();
+
+                if (seed.isDead()) {
+                    airborneSeeds.splice(i, 1);
+                }
+            }
         }
     }
 
     function windowResized() {
         resizeCanvas(windowWidth, windowHeight);
-        pixelDensity(1);
         initFlowers();
     }
 
-    function easeInOutCubic(x) {
-        return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+    function easeInOutSine(x) {
+        return -(Math.cos(Math.PI * x) - 1) / 2;
     }
 
+    // --- 花朵类 ---
     class Dandelion {
         constructor(x, startY, heightRatio, delay, scale) {
             this.baseX = x; this.baseY = startY; this.scale = scale;
-            this.targetHeight = (height * 0.5) * scale + random(30);
             this.maxStemLen = (startY - (height * heightRatio));
-            this.currentStemLen = 0; this.delay = delay; this.timer = 0;
-            this.state = 'waiting'; this.growProgress = 0;
+            this.currentStemLen = 0; 
+            
+            this.state = 'waiting'; 
+            this.delayTimer = delay;
+            this.regrowTimer = 0;
+            this.growProgress = 0;
             
             this.seeds = [];
-            let count = floor(CONFIG.baseSeedCount * scale);
+            this.maxRadius = random(100, 115) * scale;
+            
+            this.tipX = x; this.tipY = startY; 
+            this.stemBendAngle = 0;
+            
+            this.populateSeeds();
+        }
+
+        populateSeeds() {
+            this.seeds = [];
+            let count = floor(CONFIG.baseSeedCount * this.scale);
             for (let i = 0; i < count; i++) {
-                this.seeds.push(new Seed(scale));
+                this.seeds.push(new Seed(this.scale, this.maxRadius));
             }
-            // 1. 先按深度排序
             this.seeds.sort((a, b) => a.z - b.z);
-            
-            // 2. 核心逻辑：只标记最靠后的几个种子需要模糊
             let blurCount = min(this.seeds.length, CONFIG.seedsToBlurPerFlower);
-            for (let i = 0; i < blurCount; i++) {
-                this.seeds[i].needsBlur = true;
-            }
-            
+            for (let i = 0; i < blurCount; i++) this.seeds[i].needsBlur = true;
             this.activeSeedCount = 0;
-            this.tipX = x; this.tipY = startY; this.stemBendAngle = 0;
+        }
+
+        // --- 核心修改：爆炸逻辑 ---
+        explode() {
+            // 只有开花状态才能炸
+            if (this.state !== 'blooming') return;
+
+            // 遍历所有当前可见的种子
+            for (let i = 0; i < this.activeSeedCount; i++) {
+                let s = this.seeds[i];
+                
+                // 1. 计算种子在这一帧的世界坐标
+                let finalAngle = s.baseAngle; 
+                let localX = cos(finalAngle) * s.currentLen;
+                let localY = sin(finalAngle) * s.currentLen;
+                
+                // 加上茎的旋转
+                let rotatedX = localX * cos(this.stemBendAngle) - localY * sin(this.stemBendAngle);
+                let rotatedY = localX * sin(this.stemBendAngle) + localY * cos(this.stemBendAngle);
+                
+                s.pos = createVector(this.tipX + rotatedX, this.tipY + rotatedY);
+
+                // 2. 计算爆发速度 (Radial Velocity)
+                // 方向：从圆心指向种子
+                let burstDir = p5.Vector.fromAngle(finalAngle + this.stemBendAngle);
+                
+                // 力度：随机的大数值，制造冲击感
+                let explosionForce = random(8, 15); 
+                s.vel = burstDir.mult(explosionForce);
+                
+                // 加入到飞行列表
+                airborneSeeds.push(s);
+            }
+
+            // 清空花朵，进入“光秃”状态
+            this.seeds = [];
+            this.activeSeedCount = 0;
+            this.state = 'blown';
+            this.regrowTimer = 0; 
         }
 
         update(wind) {
-            this.timer++;
-            if (this.timer < this.delay) return;
-            if (this.state === 'waiting') this.state = 'growing';
-            if (this.state === 'growing') {
-                this.growProgress += 0.01;
-                if (this.growProgress >= 1) { this.growProgress = 1; this.state = 'blooming'; }
-                this.currentStemLen = this.maxStemLen * easeInOutCubic(this.growProgress);
-            }
-            
-            let bendMagnitude = wind * (this.currentStemLen / 200) * this.scale; 
-            this.stemBendAngle = lerp(this.stemBendAngle, bendMagnitude, 0.1);
-            this.tipX = this.baseX + cos(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
-            this.tipY = this.baseY + sin(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
+            if (this.delayTimer > 0) { this.delayTimer--; return; }
 
-            if (this.state === 'blooming') {
+            // 简单的状态机
+            if (this.state === 'waiting') {
+                this.state = 'growing';
+            }
+            else if (this.state === 'growing') {
+                this.growProgress += 0.015;
+                if (this.growProgress >= 1) { 
+                    this.growProgress = 1; 
+                    this.state = 'blooming'; 
+                }
+                this.currentStemLen = lerp(this.currentStemLen, this.maxStemLen, 0.03);
+            }
+            else if (this.state === 'blooming') {
+                // 逐个出现
                 if (frameCount % CONFIG.bloomInterval === 0 && this.activeSeedCount < this.seeds.length) {
                     this.seeds[this.activeSeedCount].activate();
                     this.activeSeedCount++;
                 }
             }
-            for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].update();
+            else if (this.state === 'blown') {
+                // 炸开后茎稍微回缩，表现得像失去了重量
+                this.currentStemLen = lerp(this.currentStemLen, this.maxStemLen * 0.95, 0.05);
+                
+                // 再生倒计时
+                this.regrowTimer++;
+                if (this.regrowTimer > CONFIG.regrowDelay) {
+                    this.populateSeeds();
+                    this.growProgress = 0;
+                    this.state = 'growing';
+                }
+            }
+
+            // 物理摇摆
+            let bendMagnitude = wind * (this.currentStemLen / 200) * this.scale; 
+            this.stemBendAngle = lerp(this.stemBendAngle, bendMagnitude, 0.08);
+            
+            this.tipX = this.baseX + cos(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
+            this.tipY = this.baseY + sin(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
+
+            // 只有未炸开时才更新附着的种子
+            if (this.state === 'growing' || this.state === 'blooming') {
+                for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].updateAttached();
+            }
         }
 
         display() {
-            if (this.timer < this.delay) return;
-            noFill(); stroke(CONFIG.baseColor, 150); strokeWeight(1.5 * this.scale);
+            if (this.delayTimer > 0) return;
             
+            // 茎
+            noFill(); stroke(CONFIG.baseColor, 120); strokeWeight(1.2 * this.scale);
             let midX = (this.baseX + this.tipX) / 2; let midY = (this.baseY + this.tipY) / 2;
             let cx = midX - sin(this.stemBendAngle) * 60 * this.scale; 
             bezier(this.baseX, this.baseY, cx, midY, cx, midY, this.tipX, this.tipY);
@@ -154,94 +261,176 @@
             push();
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
-            for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].display();
+            
+            // 外轮廓
+            if (this.state !== 'blown' && this.activeSeedCount > 5) {
+                noFill(); stroke(CONFIG.baseColor, 20); strokeWeight(0.8);
+                let r = this.maxRadius * this.growProgress;
+                circle(0, 0, r * 2);
+            }
+
+            if (this.state !== 'blown') {
+                for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].displayAttached();
+            }
             pop();
         }
     }
 
     class Seed {
-        constructor(scale) {
+        constructor(scale, maxRadius) {
             this.scale = scale;
             this.baseAngle = random(TWO_PI);
-            this.targetLen = random(40, 120) * scale; 
+            
+            this.maxLen = maxRadius;
+            this.minLen = maxRadius * CONFIG.minReachRatio;
+            
             this.currentLen = 0;
             this.val = floor(random(0, 10));
             this.z = random(-1, 1); 
-            this.needsBlur = false; // 默认为不需要模糊
+            this.needsBlur = false;
 
-            this.noiseOffset = random(1000); 
-            this.hoverSpeedOffset = random(0.8, 1.5);
-            this.lineNoiseOffsetX = random(5000);
-            this.lineNoiseOffsetY = random(5000);
-            // 大幅增加基础弯曲的随机性
-            this.baseCurveOffset = random(-CONFIG.lineChaosAmp, CONFIG.lineChaosAmp) * scale;
-            this.isActive = false; this.growProgress = 0;
+            this.cycleOffset = random(TWO_PI); 
+            this.cycleSpeed = random(CONFIG.tentacleSpeed * 0.5, CONFIG.tentacleSpeed * 1.5); 
+            
+            this.curveDir = random() > 0.5 ? 1 : -1;
+            this.slackNoise = random(1000);
+            
+            this.isActive = false; 
+            this.growProgress = 0;
+            this.reachFactor = 0;
+
+            // 物理属性
+            this.pos = createVector(0,0);
+            this.vel = createVector(0,0);
+            this.angle = 0;
+            this.angleVel = random(-0.1, 0.1); 
+            this.floatOffset = random(100); 
         }
 
         activate() { this.isActive = true; }
 
-        update() {
+        updateAttached() {
             if (!this.isActive) return;
             this.growProgress = lerp(this.growProgress, 1, 0.05);
-            this.currentLen = this.targetLen * this.growProgress;
-            if (frameCount % floor(random(60, 180)) === 0) this.val = floor(random(0, 10));
+            let rawSine = sin(frameCount * this.cycleSpeed + this.cycleOffset);
+            let cycleNorm = (rawSine + 1) / 2;
+            this.reachFactor = easeInOutSine(cycleNorm);
+            let targetCurrentLen = lerp(this.minLen, this.maxLen, this.reachFactor);
+            this.currentLen = targetCurrentLen * this.growProgress;
+            
+            if (frameCount % floor(random(50, 120)) === 0) this.val = floor(random(0, 10));
         }
 
-        display() {
-            let hoverNoise = noise(frameCount * CONFIG.hoverSpeed * this.hoverSpeedOffset + this.noiseOffset);
-            let hoverSway = map(hoverNoise, 0, 1, -CONFIG.hoverAmp, CONFIG.hoverAmp);
-            let finalAngle = this.baseAngle + hoverSway;
-
+        displayAttached() {
+            let finalAngle = this.baseAngle;
             let zFactor = map(this.z, -1, 1, 0, 1); 
-            
-            // 透明度计算：如果需要模糊，则让它更透明一些，增加深邃感
             let baseAlpha = this.needsBlur ? 60 : map(zFactor, 0, 1, 100, 240);
-            let finalAlpha = baseAlpha * this.growProgress;
+            let dynamicAlpha = baseAlpha * map(this.reachFactor, 0, 1, 0.7, 1.0);
+            let finalAlpha = dynamicAlpha * this.growProgress;
+            let weight = map(zFactor, 0, 1, 0.5, 1.4) * this.scale; 
+            let size = map(zFactor, 0, 1, 12, 22) * this.scale;   
 
-            let weight = map(zFactor, 0, 1, 0.5, 1.5) * this.scale; 
-            let size = map(zFactor, 0, 1, 10, 20) * this.scale;   
+            let x = cos(finalAngle) * this.currentLen;
+            let y = sin(finalAngle) * this.currentLen;
 
-            let breathingLen = this.currentLen + map(hoverNoise, 0, 1, -5, 5);
-            let x = cos(finalAngle) * breathingLen;
-            let y = sin(finalAngle) * breathingLen;
-
-            // --- 核心修改：杂乱曲线计算 ---
-            // 使用更大的振幅 (lineChaosAmp) 让控制点偏离直线更远
-            let lineVolatilityX = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetX) - 0.5) * CONFIG.lineChaosAmp;
-            let lineVolatilityY = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetY) - 0.5) * CONFIG.lineChaosAmp;
+            let slackFactor = 1.0 - this.reachFactor;
+            let noiseBend = noise(frameCount * 0.01 + this.slackNoise) * 0.5 + 0.5;
+            let currentCurveAmount = CONFIG.maxCurveSlack * slackFactor * noiseBend * this.scale * this.growProgress * this.curveDir;
             
-            // 控制点计算：基础大幅偏移 + 动态噪声扰动
-            // cpLen 设置得较小，让弯曲更靠近根部，看起来更纠结
-            let cpLen = breathingLen * 0.3; 
-            let cx = cos(finalAngle) * cpLen + cos(finalAngle + HALF_PI) * this.baseCurveOffset + lineVolatilityX;
-            let cy = sin(finalAngle) * cpLen + sin(finalAngle + HALF_PI) * this.baseCurveOffset + lineVolatilityY;
-
+            let cp1Rad = this.currentLen * 0.33;
+            let cp2Rad = this.currentLen * 0.66;
+            let tanX = -sin(finalAngle); let tanY = cos(finalAngle);
+            let cx1 = cos(finalAngle) * cp1Rad + tanX * currentCurveAmount;
+            let cy1 = sin(finalAngle) * cp1Rad + tanY * currentCurveAmount;
+            let cx2 = cos(finalAngle) * cp2Rad + tanX * currentCurveAmount * 0.8;
+            let cy2 = sin(finalAngle) * cp2Rad + tanY * currentCurveAmount * 0.8;
+            
             push();
-            // --- 核心修改：精准应用高斯模糊 ---
-            if (this.needsBlur && this.growProgress > 0.5) {
-                drawingContext.filter = `blur(${CONFIG.blurStrength}px)`;
+            if (this.needsBlur && this.growProgress > 0.8) drawingContext.filter = `blur(${CONFIG.blurStrength}px)`;
+            noFill(); stroke(CONFIG.baseColor, finalAlpha * 0.6); strokeWeight(weight);
+            bezier(0, 0, cx1, cy1, cx2, cy2, x, y);
+            translate(x, y);
+            noStroke(); fill(CONFIG.baseColor, finalAlpha);
+            textSize(size); textAlign(CENTER, CENTER);
+            let pulseSize = size * (1 + this.reachFactor * 0.1);
+            textSize(pulseSize);
+            text(this.val, 0, 0);
+            if (this.needsBlur) drawingContext.filter = 'none';
+            pop();
+        }
+
+        // --- 核心：爆炸后的物理系统 ---
+        updateAirborne(windForce) {
+            // 1. 获取当前速度
+            let speed = this.vel.mag();
+
+            // 2. 模拟空气阻力 (Air Resistance)
+            // 阻力与速度的平方成正比。速度越快，阻力越大。
+            // 这会导致爆炸瞬间减速非常快，产生“嘭”的一下的视觉张力。
+            let dragMagnitude = speed * speed * 0.08; 
+            if (speed > 0) {
+                let drag = this.vel.copy().normalize().mult(-dragMagnitude);
+                this.vel.add(drag);
             }
 
-            // 绘制曲线
-            noFill();
-            stroke(CONFIG.baseColor, finalAlpha * 0.7);
-            strokeWeight(weight);
-            // 使用两个相同的控制点来创造强烈的单一弯曲，或者你可以调整为两个不同的点创造S形
-            bezier(0, 0, cx, cy, cx, cy, x, y);
+            // 3. 漂浮阶段
+            // 当速度降下来后，让它们受到微风和湍流的影响
+            if (speed < 5) { // 阈值：速度小于5时，进入漂浮模式
+                let noiseScale = 0.01;
+                let theta = map(noise(this.pos.x * noiseScale, this.pos.y * noiseScale, frameCount * 0.01), 0, 1, -PI, PI);
+                
+                // 湍流力
+                let turbulence = p5.Vector.fromAngle(theta).mult(0.05);
+                // 用户滑块控制的风
+                let steadyWind = createVector(windForce * 0.05, -0.01 * windForce);
+                // 微弱重力
+                let gravity = createVector(0, 0.03);
 
-            // 绘制数字
-            translate(x, y);
+                this.vel.add(turbulence);
+                this.vel.add(steadyWind);
+                this.vel.add(gravity);
+            }
+
+            this.pos.add(this.vel);
+
+            // 旋转跟随速度方向，但也稍微保留一点自旋
+            this.angle += this.angleVel;
+            this.angleVel *= 0.95; // 自旋慢慢停止
+        }
+
+        displayAirborne() {
+            let zFactor = map(this.z, -1, 1, 0, 1); 
+            let alpha = this.needsBlur ? 80 : 180;
+            let size = map(zFactor, 0, 1, 12, 22) * this.scale;
+
+            push();
+            translate(this.pos.x, this.pos.y);
+            rotate(this.angle); 
+
+            if (this.needsBlur) drawingContext.filter = `blur(${CONFIG.blurStrength}px)`;
+
+            // 绒毛尾巴
+            let tailWag = sin(frameCount * 0.15 + this.floatOffset) * 4;
+            
+            noFill();
+            stroke(CONFIG.baseColor, alpha * 0.4);
+            strokeWeight(0.5);
+            // 尾巴稍微拉长一点，增强速度感
+            bezier(0, 0, -5, 5, -10 + tailWag, 5, -15, 0);
+            bezier(0, 0, -5, -5, -10 + tailWag, -5, -15, 0);
+
             noStroke();
-            fill(CONFIG.baseColor, finalAlpha);
+            fill(CONFIG.baseColor, alpha);
             textSize(size);
             textAlign(CENTER, CENTER);
             text(this.val, 0, 0);
 
-            // 重置滤镜
-            if (this.needsBlur) {
-                drawingContext.filter = 'none';
-            }
+            if (this.needsBlur) drawingContext.filter = 'none';
             pop();
+        }
+
+        isDead() {
+            return (this.pos.x > width + 400 || this.pos.y < -400 || this.pos.x < -400 || this.pos.y > height + 200);
         }
     }
 </script>
