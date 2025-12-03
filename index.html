@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zero-Lag Dandelion V9</title>
+    <title>Targeted Blur & Chaotic Lines V10</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #e8e8e8; }
@@ -35,11 +35,15 @@
         baseColor: 20,            
         windSpeed: 0.005,
         
+        // --- 核心配置更新 ---
+        seedsToBlurPerFlower: 6,   // 每朵花只模糊最靠后的6个数字 (控制在低位以保性能)
+        blurStrength: 8,           // 模糊强度
+        
         // 动态参数
         hoverSpeed: 0.04,
         hoverAmp: 0.15,
-        lineVolatilitySpeed: 0.08, 
-        lineVolatilityAmp: 20
+        lineVolatilitySpeed: 0.05, 
+        lineChaosAmp: 80           // 大幅增加线条的混乱弯曲程度
     };
 
     let flowers = [];
@@ -47,12 +51,8 @@
     let windSlider;
 
     function setup() {
-        // [关键优化] 强制使用 P2D 渲染器
         createCanvas(windowWidth, windowHeight, P2D);
-        
-        // [核心优化] 强制像素密度为 1。
-        // Retina 屏幕默认是 2 或 4，这会导致 4-16 倍的性能开销。
-        // 改为 1 后，性能直接起飞，肉眼几乎看不出区别。
+        // 保持低像素密度以确保最佳性能
         pixelDensity(1);
         
         textFont('Courier New, monospace'); 
@@ -69,7 +69,6 @@
     }
 
     function draw() {
-        // 使用 clear() 在某些浏览器下比 background() 更快
         clear();
         background('#e8e8e8'); 
         
@@ -86,11 +85,10 @@
 
     function windowResized() {
         resizeCanvas(windowWidth, windowHeight);
-        pixelDensity(1); // 窗口改变大小时也要保持低密度
+        pixelDensity(1);
         initFlowers();
     }
 
-    // 缓动函数
     function easeInOutCubic(x) {
         return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
     }
@@ -108,8 +106,14 @@
             for (let i = 0; i < count; i++) {
                 this.seeds.push(new Seed(scale));
             }
-            // 排序仍然需要，保证透明度混合正确
+            // 1. 先按深度排序
             this.seeds.sort((a, b) => a.z - b.z);
+            
+            // 2. 核心逻辑：只标记最靠后的几个种子需要模糊
+            let blurCount = min(this.seeds.length, CONFIG.seedsToBlurPerFlower);
+            for (let i = 0; i < blurCount; i++) {
+                this.seeds[i].needsBlur = true;
+            }
             
             this.activeSeedCount = 0;
             this.tipX = x; this.tipY = startY; this.stemBendAngle = 0;
@@ -120,7 +124,7 @@
             if (this.timer < this.delay) return;
             if (this.state === 'waiting') this.state = 'growing';
             if (this.state === 'growing') {
-                this.growProgress += 0.01; // 生长稍微加快一点
+                this.growProgress += 0.01;
                 if (this.growProgress >= 1) { this.growProgress = 1; this.state = 'blooming'; }
                 this.currentStemLen = this.maxStemLen * easeInOutCubic(this.growProgress);
             }
@@ -163,12 +167,14 @@
             this.currentLen = 0;
             this.val = floor(random(0, 10));
             this.z = random(-1, 1); 
-            
+            this.needsBlur = false; // 默认为不需要模糊
+
             this.noiseOffset = random(1000); 
             this.hoverSpeedOffset = random(0.8, 1.5);
             this.lineNoiseOffsetX = random(5000);
             this.lineNoiseOffsetY = random(5000);
-            this.baseCurveOffset = random(-20, 20) * scale;
+            // 大幅增加基础弯曲的随机性
+            this.baseCurveOffset = random(-CONFIG.lineChaosAmp, CONFIG.lineChaosAmp) * scale;
             this.isActive = false; this.growProgress = 0;
         }
 
@@ -182,48 +188,59 @@
         }
 
         display() {
-            // 计算基础运动
             let hoverNoise = noise(frameCount * CONFIG.hoverSpeed * this.hoverSpeedOffset + this.noiseOffset);
             let hoverSway = map(hoverNoise, 0, 1, -CONFIG.hoverAmp, CONFIG.hoverAmp);
             let finalAngle = this.baseAngle + hoverSway;
 
-            let zFactor = map(this.z, -1, 1, 0, 1); // 0(远) -> 1(近)
+            let zFactor = map(this.z, -1, 1, 0, 1); 
             
-            // --- [极速性能] 视觉深度模拟 ---
-            // 不使用模糊滤镜，而是使用极其悬殊的透明度对比
-            // 远处的：非常透明 (alpha 20)，让它看起来像融化在背景里
-            // 近处的：很实 (alpha 240)
-            let alphaTarget = map(zFactor, 0, 1, 20, 240); 
-            let finalAlpha = alphaTarget * this.growProgress;
+            // 透明度计算：如果需要模糊，则让它更透明一些，增加深邃感
+            let baseAlpha = this.needsBlur ? 60 : map(zFactor, 0, 1, 100, 240);
+            let finalAlpha = baseAlpha * this.growProgress;
 
-            let weight = map(zFactor, 0, 1, 0.3, 1.4) * this.scale; 
+            let weight = map(zFactor, 0, 1, 0.5, 1.5) * this.scale; 
             let size = map(zFactor, 0, 1, 10, 20) * this.scale;   
 
             let breathingLen = this.currentLen + map(hoverNoise, 0, 1, -5, 5);
             let x = cos(finalAngle) * breathingLen;
             let y = sin(finalAngle) * breathingLen;
 
-            // 混乱曲线计算 (保留这个视觉核心，因为它是数学计算不费显卡)
-            let lineVolatilityX = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetX) - 0.5) * CONFIG.lineVolatilityAmp;
-            let lineVolatilityY = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetY) - 0.5) * CONFIG.lineVolatilityAmp;
+            // --- 核心修改：杂乱曲线计算 ---
+            // 使用更大的振幅 (lineChaosAmp) 让控制点偏离直线更远
+            let lineVolatilityX = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetX) - 0.5) * CONFIG.lineChaosAmp;
+            let lineVolatilityY = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetY) - 0.5) * CONFIG.lineChaosAmp;
             
-            let cpLen = breathingLen * 0.5;
-            let cx = cos(finalAngle) * cpLen + cos(finalAngle + HALF_PI) * this.baseCurveOffset * this.growProgress + lineVolatilityX;
-            let cy = sin(finalAngle) * cpLen + sin(finalAngle + HALF_PI) * this.baseCurveOffset * this.growProgress + lineVolatilityY;
-
-            // 绘制
-            noFill();
-            stroke(CONFIG.baseColor, finalAlpha * 0.6); // 线条比字更淡
-            strokeWeight(weight);
-            bezier(0, 0, cx, cy, cx, cy, x, y);
+            // 控制点计算：基础大幅偏移 + 动态噪声扰动
+            // cpLen 设置得较小，让弯曲更靠近根部，看起来更纠结
+            let cpLen = breathingLen * 0.3; 
+            let cx = cos(finalAngle) * cpLen + cos(finalAngle + HALF_PI) * this.baseCurveOffset + lineVolatilityX;
+            let cy = sin(finalAngle) * cpLen + sin(finalAngle + HALF_PI) * this.baseCurveOffset + lineVolatilityY;
 
             push();
+            // --- 核心修改：精准应用高斯模糊 ---
+            if (this.needsBlur && this.growProgress > 0.5) {
+                drawingContext.filter = `blur(${CONFIG.blurStrength}px)`;
+            }
+
+            // 绘制曲线
+            noFill();
+            stroke(CONFIG.baseColor, finalAlpha * 0.7);
+            strokeWeight(weight);
+            // 使用两个相同的控制点来创造强烈的单一弯曲，或者你可以调整为两个不同的点创造S形
+            bezier(0, 0, cx, cy, cx, cy, x, y);
+
+            // 绘制数字
             translate(x, y);
             noStroke();
             fill(CONFIG.baseColor, finalAlpha);
             textSize(size);
             textAlign(CENTER, CENTER);
             text(this.val, 0, 0);
+
+            // 重置滤镜
+            if (this.needsBlur) {
+                drawingContext.filter = 'none';
+            }
             pop();
         }
     }
