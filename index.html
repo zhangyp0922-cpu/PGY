@@ -3,39 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V22 - Control & Clean</title>
+    <title>Mitosis V23 - Cinematic DoF</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #f4f4f4; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; }
         canvas { display: block; }
         #ui-container {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px); /* UI本身的磨砂玻璃效果 */
             padding: 15px; border-radius: 12px;
             font-family: 'Segoe UI Emoji', 'Arial', sans-serif;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08); z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1); z-index: 100;
             display: flex; flex-direction: column; gap: 12px;
             width: 220px;
         }
         label { font-size: 12px; font-weight: bold; color: #555; }
         input[type=range] { width: 100%; cursor: pointer; accent-color: #333; }
         
-        /* 按钮容器 */
         .btn-group { display: flex; gap: 10px; }
-        
         button {
-            flex: 1;
-            padding: 10px 0; cursor: pointer;
+            flex: 1; padding: 10px 0; cursor: pointer;
             border: none; border-radius: 6px; 
-            font-weight: bold; font-size: 13px;
-            color: #fff; transition: all 0.2s;
+            font-weight: bold; font-size: 13px; color: #fff; 
+            transition: all 0.2s;
         }
         #blowBtn { background: #333; }
         #blowBtn:hover { background: #555; transform: scale(1.02); }
-        
-        #clearBtn { background: #888; }
-        #clearBtn:hover { background: #aaa; transform: scale(1.02); }
-        
+        #clearBtn { background: #999; }
+        #clearBtn:hover { background: #bbb; transform: scale(1.02); }
         button:active { transform: scale(0.95); }
     </style>
 </head>
@@ -43,10 +39,9 @@
 
 <div id="ui-container">
     <div>
-        <label>💨 风速控制 (Wind Speed)</label>
+        <label>💨 风速 (Wind Speed)</label>
         <input type="range" id="windSlider" min="0" max="5" step="0.1" value="1.0">
     </div>
-    
     <div class="btn-group">
         <button id="blowBtn">💥 炸散</button>
         <button id="clearBtn">🧹 清空</button>
@@ -58,12 +53,16 @@
         baseSeedCount: 45,        
         bloomInterval: 1,         
         baseColor: 40,            
-        windSpeed: 0.005,         // 风场随时间变化的速率
+        windSpeed: 0.005,         
         
         tentacleSpeed: 0.02,
         minReachRatio: 0.4,
         maxCurveSlack: 100,
-        regrowDelay: 100 
+        regrowDelay: 100,
+        
+        // 景深参数
+        blurThreshold: 0.4, // zFactor 小于这个值的会被模糊
+        blurAmount: '4px'   // 模糊强度
     };
     
     const KAOMOJI_LIST = [
@@ -78,32 +77,36 @@
     let windSlider, blowBtn, clearBtn;
 
     function setup() {
-        createCanvas(windowWidth, windowHeight);
+        // 使用 P2D 模式以获得更好的性能（部分浏览器）
+        createCanvas(windowWidth, windowHeight, P2D);
         pixelDensity(1); 
         textFont("Arial, sans-serif"); 
         textStyle(NORMAL);
         frameRate(60); 
         
-        // 获取UI元素
         windSlider = document.getElementById('windSlider');
         blowBtn = document.getElementById('blowBtn');
         clearBtn = document.getElementById('clearBtn');
         
         blowBtn.addEventListener('click', triggerExplosion);
-        
-        // --- 清空功能 ---
-        clearBtn.addEventListener('click', () => {
-            airborneSeeds = []; // 直接清空飞行数组
-        });
+        clearBtn.addEventListener('click', () => { airborneSeeds = []; });
 
         initFlowers();
     }
 
     function initFlowers() {
         flowers = [];
-        flowers.push(new Dandelion(width * 0.55, height + 100, 0.5, 0, 1.7)); // 巨型前景
-        flowers.push(new Dandelion(width * 0.15, height + 40, 0.75, 20, 0.5)); // 迷你远景
-        flowers.push(new Dandelion(width * 0.85, height + 60, 0.6, 50, 0.9));  // 中型中景
+        // 参数：x, y, heightRatio, delay, scale
+        // Scale 决定了它们在场景中的"远近"（虽然是模拟的）
+        
+        // 1. 远景花 (Scale 0.5) - 应该被模糊
+        flowers.push(new Dandelion(width * 0.15, height + 40, 0.75, 20, 0.5)); 
+        
+        // 2. 中景花 (Scale 0.9) - 清晰
+        flowers.push(new Dandelion(width * 0.85, height + 60, 0.6, 50, 0.9));
+        
+        // 3. 近景巨型花 (Scale 1.7) - 清晰且加粗
+        flowers.push(new Dandelion(width * 0.55, height + 100, 0.5, 0, 1.7)); 
     }
 
     function triggerExplosion() {
@@ -112,39 +115,80 @@
         }
     }
 
+    // --- 核心渲染循环 ---
     function draw() {
         clear();
-        background('#f4f4f4');
+        background('#f0f0f0');
         
-        // 获取当前滑块的风力值
         let userWindForce = parseFloat(windSlider.value);
-        
         globalWindTime += CONFIG.windSpeed;
         let windNoise = noise(globalWindTime) - 0.5; 
-        
-        // 地面植物受到的风力（稍微弱一点，不然植物会弯得太厉害）
         let plantWind = windNoise * userWindForce * 0.5; 
 
-        // 简单的深度排序渲染
-        let sortedFlowers = [...flowers].sort((a,b) => a.scale - b.scale);
-
-        for (let flower of sortedFlowers) {
-            flower.update(plantWind);
-            flower.display();
+        // 1. 更新逻辑 (不绘图，只计算位置)
+        // ----------------------------------------
+        for (let flower of flowers) flower.update(plantWind);
+        
+        // 移除飞出屏幕的种子
+        for (let i = airborneSeeds.length - 1; i >= 0; i--) {
+            let seed = airborneSeeds[i];
+            seed.updateAirborne(userWindForce);
+            if (seed.pos.x > width + 400 || seed.pos.x < -400 || 
+                seed.pos.y > height + 400 || seed.pos.y < -600) {
+                airborneSeeds.splice(i, 1);
+            }
         }
 
-        if (airborneSeeds.length > 0) {
-            for (let i = airborneSeeds.length - 1; i >= 0; i--) {
-                let seed = airborneSeeds[i];
-                // 将滑块风力传给飞行粒子
-                seed.updateAirborne(userWindForce);
-                seed.displayAirborne();
+        // 2. 分层渲染队列准备
+        // ----------------------------------------
+        let bgRenderList = [];
+        let fgRenderList = [];
 
-                if (seed.pos.x > width + 400 || seed.pos.x < -400 || 
-                    seed.pos.y > height + 400 || seed.pos.y < -600) {
-                    airborneSeeds.splice(i, 1);
-                }
+        // (A) 处理还长在地上的花朵
+        for (let flower of flowers) {
+            // 如果 scale 小于 0.6，视为背景花朵
+            if (flower.scale < 0.6) bgRenderList.push({type: 'flower', obj: flower});
+            else fgRenderList.push({type: 'flower', obj: flower});
+        }
+
+        // (B) 处理飞行的种子 (根据 Z 轴排序分层)
+        // 先排序，确保遮挡关系正确
+        airborneSeeds.sort((a, b) => a.z - b.z);
+        
+        for (let seed of airborneSeeds) {
+            // 归一化Z值: -1~1 -> 0~1
+            let zFactor = map(seed.z, -1, 1, 0, 1);
+            if (zFactor < CONFIG.blurThreshold) {
+                bgRenderList.push({type: 'seed', obj: seed});
+            } else {
+                fgRenderList.push({type: 'seed', obj: seed});
             }
+        }
+
+        // 3. 批量绘制 (Batch Rendering) - 性能优化的关键
+        // ----------------------------------------
+        
+        // [Pass 1] 绘制后景 (开启模糊)
+        push();
+        // 只有当有东西需要画在背景时才开启模糊，节省开销
+        if (bgRenderList.length > 0) {
+            drawingContext.filter = `blur(${CONFIG.blurAmount})`;
+            for (let item of bgRenderList) {
+                if (item.type === 'flower') item.obj.display();
+                else item.obj.displayAirborne(); // 飞行中的
+            }
+        }
+        pop(); // 自动关闭滤镜
+
+        // [Pass 2] 绘制前景 (无模糊，保持清晰锐利)
+        // 确保按照 scale 从小到大排序前景花朵，保证遮挡正确
+        let sortedFgFlowers = fgRenderList.filter(i => i.type === 'flower').sort((a,b) => a.obj.scale - b.obj.scale);
+        
+        for (let item of sortedFgFlowers) item.obj.display();
+        
+        // 绘制前景种子
+        for (let item of fgRenderList) {
+            if (item.type === 'seed') item.obj.displayAirborne();
         }
     }
 
@@ -157,6 +201,7 @@
         return -(Math.cos(Math.PI * x) - 1) / 2;
     }
 
+    // --- Dandelion Class ---
     class Dandelion {
         constructor(x, startY, heightRatio, delay, scale) {
             this.baseX = x; this.baseY = startY; this.scale = scale;
@@ -179,6 +224,7 @@
             for (let i = 0; i < count; i++) {
                 this.seeds.push(new Seed(this.scale, this.maxRadius));
             }
+            // Z轴排序
             this.seeds.sort((a, b) => a.z - b.z);
             this.activeSeedCount = 0;
         }
@@ -251,7 +297,9 @@
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
             if (this.state !== 'blown' && this.activeSeedCount > 5) {
-                noFill(); stroke(CONFIG.baseColor, 20); strokeWeight(0.8);
+                // 如果是前景花朵，给外轮廓稍微加重一点
+                let alpha = this.scale > 0.6 ? 40 : 20;
+                noFill(); stroke(CONFIG.baseColor, alpha); strokeWeight(0.8);
                 let r = this.maxRadius * this.growProgress;
                 circle(0, 0, r * 2);
             }
@@ -327,7 +375,8 @@
             let wobble = sin(frameCount * 0.1 + this.cycleOffset) * 0.2;
             rotate(wobble); 
             
-            if (zFactor > 0.6) {
+            // 字体描边增强近处质感
+            if (zFactor > 0.6 && this.scale > 0.6) {
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
                 stroke(CONFIG.baseColor, alpha);
                 strokeWeight(textStrokeW);
@@ -347,7 +396,6 @@
             this.vel.mult(0.92); 
             if (speed < 4) {
                 let turbulence = p5.Vector.random2D().mult(0.05);
-                // 使用传入的 windForce 影响漂浮
                 let steadyWind = createVector(0.05 * windForce, -0.02); 
                 let gravity = createVector(0, 0.05);
                 this.vel.add(turbulence).add(steadyWind).add(gravity);
@@ -387,7 +435,7 @@
 
             bezier(0, 0, -5 - stretch, controlY, -10 - stretch + wag, controlY, -15 - stretch, 0);
             
-            if (zFactor > 0.6) {
+            if (zFactor > 0.6 && this.scale > 0.6) {
                 let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
                 stroke(CONFIG.baseColor, alpha);
                 strokeWeight(textStrokeW);
