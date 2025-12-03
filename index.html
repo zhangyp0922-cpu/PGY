@@ -3,53 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V18 - Chinese Characters</title>
+    <title>Mitosis V19 - Kaomoji Edition</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f4f4f4; }
         canvas { display: block; }
         #ui-container {
             position: absolute; top: 20px; left: 20px;
             background: rgba(255, 255, 255, 0.9);
-            padding: 15px; border-radius: 8px;
-            font-family: sans-serif; /* 界面也用无衬线字体 */
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 100;
+            padding: 15px; border-radius: 12px;
+            font-family: 'Segoe UI Emoji', 'Arial', sans-serif;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08); z-index: 100;
             display: flex; flex-direction: column; gap: 10px;
             width: 200px;
         }
         button {
             padding: 12px 0; cursor: pointer;
-            background: #222; color: #fff; border: none;
-            border-radius: 4px; font-weight: bold; font-size: 14px;
-            transition: transform 0.1s;
+            background: #333; color: #fff; border: none;
+            border-radius: 6px; font-weight: bold; font-size: 14px;
+            transition: all 0.2s;
         }
-        button:hover { background: #444; }
-        button:active { transform: scale(0.98); }
+        button:hover { background: #555; transform: scale(1.02); }
+        button:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
-    <button id="blowBtn">💥 炸散 (EXPLODE)</button>
-    <div style="font-size:12px; color:#666; text-align:center;">高性能版 - 无卡顿</div>
+    <button id="blowBtn">💥 炸散 (BOOM)</button>
+    <div style="font-size:12px; color:#888; text-align:center;">颜文字限定版 (OwO)</div>
 </div>
 
 <script>
     const CONFIG = {
-        baseSeedCount: 45,        
+        baseSeedCount: 40,        // 稍微减少一点点，因为颜文字比较宽
         bloomInterval: 1,         
-        baseColor: 30,            
+        baseColor: 40,            
         windSpeed: 0.005,
         
         tentacleSpeed: 0.02,
         minReachRatio: 0.4,
         maxCurveSlack: 100,
-        regrowDelay: 90 
+        regrowDelay: 100 
     };
     
-    //在这里定义你要显示的字
-    //如果你是想写“蒲公英”，可以在这里把 '莹' 改成 '英'
-    const CHAR_LIST = ['蒲', '公', '莹']; 
+    // --- 颜文字池 ---
+    // 选了一些比较短、适合漂浮的表情
+    const KAOMOJI_LIST = [
+        '(>‿<)', 'OwO', '^o^', '(o_o)', '>_<', 
+        'OuO', '*_*', 'QAQ', 'OvO', '(^_-)', 'QwQ'
+    ]; 
 
     let flowers = [];
     let airborneSeeds = []; 
@@ -59,10 +62,9 @@
     function setup() {
         createCanvas(windowWidth, windowHeight);
         pixelDensity(1); 
-        // 使用更适合中文的字体栈
-        textFont("'Microsoft YaHei', 'PingFang SC', sans-serif"); 
-        // 稍微加粗一点让字看清楚
-        textStyle(BOLD);
+        // 使用 Arial 或系统字体，确保特殊符号显示正常
+        textFont("Arial, sans-serif"); 
+        textStyle(NORMAL);
         frameRate(60); 
         
         blowBtn = document.getElementById('blowBtn');
@@ -86,7 +88,7 @@
 
     function draw() {
         clear();
-        background('#f0f0f0');
+        background('#f4f4f4');
         
         globalWindTime += CONFIG.windSpeed;
         let windNoise = noise(globalWindTime) - 0.5; 
@@ -232,8 +234,8 @@
             this.minLen = maxRadius * CONFIG.minReachRatio;
             this.currentLen = 0;
             
-            // --- 修改：从字符数组中随机选择 ---
-            this.val = random(CHAR_LIST);
+            // --- 随机选取颜文字 ---
+            this.val = random(KAOMOJI_LIST);
             
             this.z = random(-1, 1); 
             this.isBackground = false; 
@@ -247,7 +249,7 @@
             this.pos = createVector(0,0);
             this.vel = createVector(0,0);
             this.angle = 0;
-            this.angleVel = random(-0.2, 0.2); 
+            this.angleVel = random(-0.1, 0.1); 
             this.floatOffset = random(100); 
         }
 
@@ -262,9 +264,9 @@
             let targetCurrentLen = lerp(this.minLen, this.maxLen, this.reachFactor);
             this.currentLen = targetCurrentLen * this.growProgress;
             
-            // 偶尔变换文字，增加闪烁感
-            if (frameCount % 60 === 0) {
-                this.val = random(CHAR_LIST);
+            // 附着时偶尔换表情
+            if (frameCount % 120 === 0) {
+                this.val = random(KAOMOJI_LIST);
             }
         }
 
@@ -277,8 +279,8 @@
             let finalAlpha = dynamicAlpha * this.growProgress;
 
             let weight = map(zFactor, 0, 1, 0.5, 1.4) * this.scale; 
-            // 稍微调大字体，因为汉字比数字复杂
-            let size = map(zFactor, 0, 1, 14, 24) * this.scale;   
+            // 颜文字稍微小一点点，因为它们比较宽
+            let size = map(zFactor, 0, 1, 10, 16) * this.scale;   
             let x = cos(finalAngle) * this.currentLen;
             let y = sin(finalAngle) * this.currentLen;
 
@@ -302,10 +304,13 @@
             
             push(); 
             translate(x, y);
-            // 修正文字旋转：让汉字始终保持大致竖直，或者轻微随角度旋转
-            // 汉字如果完全旋转可能会看不清，这里稍微保留一点跟随角度
-            // 但如果喜欢“正”的字，可以注释掉 rotate
-            // rotate(finalAngle + HALF_PI); 
+            
+            // --- 智能旋转逻辑 ---
+            // 如果在左半边 (角度大于90度)，为了防止颜文字倒立，需要特殊处理
+            // 这里我们简单处理：不随茎旋转，而是保持水平，或者轻微摆动
+            // 这样表情永远是正的，看起来更像“小精灵”坐在茎上
+            let wobble = sin(frameCount * 0.1 + this.cycleOffset) * 0.2;
+            rotate(wobble); 
             
             noStroke(); fill(CONFIG.baseColor, finalAlpha);
             textSize(size); textAlign(CENTER, CENTER);
@@ -331,14 +336,27 @@
         displayAirborne() {
             let zFactor = map(this.z, -1, 1, 0, 1); 
             let alpha = this.isBackground ? 50 : 200;
-            let size = map(zFactor, 0, 1, 14, 24) * this.scale;
+            let size = map(zFactor, 0, 1, 10, 16) * this.scale;
             let speed = this.vel.mag();
 
             push();
             translate(this.pos.x, this.pos.y);
             
-            if (speed > 2) rotate(this.vel.heading());
-            else rotate(this.angle); 
+            // --- 飞行时的旋转逻辑 ---
+            if (speed > 2) {
+                // 速度快时，稍微随风倾斜
+                let heading = this.vel.heading();
+                // 如果向左飞 (heading在90度到270度之间)，为了防止表情倒立，
+                // 我们翻转它，或者限制旋转角度
+                if (abs(heading) > HALF_PI) {
+                    rotate(heading + PI); // 翻转180度修正
+                } else {
+                    rotate(heading);
+                }
+            } else {
+                // 漂浮时，主要保持水平，带一点点随机自旋
+                rotate(this.angle); 
+            }
 
             let stretch = constrain(speed * 2, 0, 40); 
             noFill();
@@ -355,7 +373,6 @@
             textSize(size);
             textAlign(CENTER, CENTER);
             
-            if (speed > 2 && abs(this.vel.heading()) > HALF_PI) rotate(PI);
             text(this.val, 0, 0);
 
             pop();
