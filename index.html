@@ -3,60 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V26 - Dark Neon</title>
+    <title>Mitosis V27 - Apple Monochrome</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        /* 1. 背景全黑 */
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #050505; }
+        /* 1. 背景：Apple 经典的浅灰白，护眼且高级 */
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #F5F5F7; }
         canvas { display: block; }
         
-        /* 2. UI 变成深色半透明磨砂 */
+        /* 2. UI：极致的毛玻璃与极简线条 */
         #ui-container {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(20, 20, 20, 0.8); /* 深色背景 */
-            backdrop-filter: blur(8px);
-            padding: 15px; border-radius: 12px;
-            font-family: 'Segoe UI Emoji', 'Arial', sans-serif;
-            border: 1px solid rgba(255, 255, 255, 0.1); /* 微弱的边框 */
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 100;
-            display: flex; flex-direction: column; gap: 12px;
-            width: 220px;
+            /* 高透白底 + 强模糊 */
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px; border-radius: 16px;
+            /* 极细的边框，模拟玻璃边缘 */
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            /* 柔和的弥散投影 */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05); 
+            z-index: 100;
+            display: flex; flex-direction: column; gap: 16px;
+            width: 240px;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
         }
         
-        label { font-size: 12px; font-weight: bold; color: #ccc; } /* 文字变亮 */
-        input[type=range] { width: 100%; cursor: pointer; accent-color: #00EAD3; } /* 滑块变成青色荧光 */
+        label { 
+            font-size: 11px; font-weight: 600; color: #86868b; 
+            letter-spacing: 0.5px; text-transform: uppercase;
+        }
         
-        .btn-group { display: flex; gap: 10px; }
+        /* 自定义滑块：黑色极简风 */
+        input[type=range] { 
+            width: 100%; cursor: pointer; accent-color: #1d1d1f; 
+            height: 4px; background: #d2d2d7; border-radius: 2px;
+        }
+        
+        .btn-group { display: flex; gap: 12px; }
+        
         button {
-            flex: 1; padding: 10px 0; cursor: pointer;
-            border: none; border-radius: 6px; 
-            font-weight: bold; font-size: 13px; color: #000; 
-            transition: all 0.2s;
+            flex: 1; padding: 12px 0; cursor: pointer;
+            border: none; border-radius: 8px; 
+            font-size: 13px; font-weight: 500; 
+            transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
         }
         
-        /* 按钮使用高亮的霓虹色 */
-        #blowBtn { background: #00EAD3; box-shadow: 0 0 10px rgba(0, 234, 211, 0.4); }
-        #blowBtn:hover { background: #5FFBF1; transform: scale(1.02); }
+        /* 炸散按钮：纯黑底白字 */
+        #blowBtn { background: #1d1d1f; color: #fff; }
+        #blowBtn:hover { background: #333; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         
-        #clearBtn { background: #FF449F; color: #fff; box-shadow: 0 0 10px rgba(255, 68, 159, 0.4); }
-        #clearBtn:hover { background: #FF7BBF; transform: scale(1.02); }
+        /* 清空按钮：浅灰底黑字 */
+        #clearBtn { background: #e8e8ed; color: #1d1d1f; }
+        #clearBtn:hover { background: #d2d2d7; }
         
-        button:active { transform: scale(0.95); }
+        button:active { transform: scale(0.98); }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
     <div>
-        <label>💨 风速 (Wind Speed)</label>
-        <input type="range" id="windSlider" min="0" max="5" step="0.1" value="1.0">
+        <label>Wind Strength</label>
+        <div style="height:8px;"></div> <input type="range" id="windSlider" min="0" max="5" step="0.1" value="1.0">
     </div>
     <div class="btn-group">
-        <button id="blowBtn">💥 炸散</button>
-        <button id="clearBtn">🧹 清空</button>
-    </div>
-    <div style="font-size:11px; color:#666; margin-top:5px; text-align:center;">
-        *暗夜霓虹模式 (Neon Mode)
+        <button id="blowBtn">Explode</button>
+        <button id="clearBtn">Clear</button>
     </div>
 </div>
 
@@ -64,8 +76,8 @@
     const CONFIG = {
         baseSeedCount: 45,        
         bloomInterval: 1,         
-        // 3. 茎的颜色改成浅灰色/银色，以便在黑背景下可见
-        stemColor: [150, 150, 150],  
+        // 3. 茎的颜色：深灰，接近黑色但有细节
+        stemColor: [40, 40, 40],  
         windSpeed: 0.005,         
         
         tentacleSpeed: 0.02,
@@ -74,20 +86,20 @@
         regrowDelay: 100,
         
         blurThreshold: 0.4, 
-        blurAmount: '4px',
+        blurAmount: '6px', // 模糊稍微加大一点，增加朦胧感
         
         minLifespan: 180, 
         maxLifespan: 300, 
         fadeDuration: 60   
     };
     
-    // --- 🎨 霓虹配色池 (更亮、更荧光) ---
+    // --- 🎨 黑白灰配色池 (Grayscale) ---
+    // 通过不同的灰度值来体现层次
     const COLOR_PALETTE = [
-        {r: 0,   g: 234, b: 211}, // 赛博青 (Cyber Cyan)
-        {r: 255, g: 68,  b: 159}, // 霓虹粉 (Neon Pink)
-        {r: 255, g: 215, b: 0},   // 亮金色 (Gold)
-        {r: 57,  g: 255, b: 20},  // 荧光绿 (Lime)
-        {r: 170, g: 0,   b: 255}  // 电光紫 (Electric Purple)
+        {r: 0,   g: 0,   b: 0},   // 纯黑 (Pure Black)
+        {r: 50,  g: 50,  b: 50},  // 深灰 (Charcoal)
+        {r: 100, g: 100, b: 100}, // 中灰 (Slate)
+        {r: 30,  g: 30,  b: 30}   // 墨色 (Ink)
     ];
 
     const KAOMOJI_LIST = [
@@ -103,8 +115,10 @@
 
     function setup() {
         createCanvas(windowWidth, windowHeight, P2D);
-        pixelDensity(1); 
-        textFont("Arial, sans-serif"); 
+        pixelDensity(2); // 开启高分屏支持(Retina)，线条更细腻，虽然费性能但在黑白风下线条质量很重要
+        
+        // 使用系统字体
+        textFont("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif");
         textStyle(NORMAL);
         frameRate(60); 
         
@@ -133,8 +147,7 @@
 
     function draw() {
         clear();
-        // 4. 画布背景设为全黑
-        background('#050505'); 
+        background('#F5F5F7'); // 每一帧重绘背景
         
         let userWindForce = parseFloat(windSlider.value);
         globalWindTime += CONFIG.windSpeed;
@@ -172,7 +185,6 @@
 
         push();
         if (bgRenderList.length > 0) {
-            // 在黑色背景下，模糊效果会产生类似“光晕” (Bokeh) 的美感
             drawingContext.filter = `blur(${CONFIG.blurAmount})`;
             for (let item of bgRenderList) {
                 if (item.type === 'flower') item.obj.display();
@@ -280,8 +292,8 @@
         display() {
             if (this.delayTimer > 0) return;
             noFill(); 
-            // 茎：使用配置的亮灰色
-            stroke(CONFIG.stemColor[0], CONFIG.stemColor[1], CONFIG.stemColor[2], 180); 
+            // 茎的颜色：深灰
+            stroke(CONFIG.stemColor[0], CONFIG.stemColor[1], CONFIG.stemColor[2], 200); 
             
             let stemWeight = map(this.scale, 0.5, 1.7, 0.8, 2.5);
             strokeWeight(stemWeight);
@@ -294,9 +306,8 @@
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
             if (this.state !== 'blown' && this.activeSeedCount > 5) {
-                // 花托透明度
-                let alpha = this.scale > 0.6 ? 60 : 30;
-                noFill(); stroke(CONFIG.stemColor[0], CONFIG.stemColor[1], CONFIG.stemColor[2], alpha); strokeWeight(0.8);
+                let alpha = this.scale > 0.6 ? 30 : 15;
+                noFill(); stroke(0, 0, 0, alpha); strokeWeight(0.8);
                 let r = this.maxRadius * this.growProgress;
                 circle(0, 0, r * 2);
             }
@@ -352,7 +363,8 @@
             let zFactor = map(this.z, -1, 1, 0, 1);
             let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale; 
             let size = map(zFactor, 0, 1, 8, 20) * this.scale;     
-            let alpha = map(zFactor, 0, 1, 100, 255);              
+            // 透明度：黑白灰风格下，透明度是区分层次的关键
+            let alpha = map(zFactor, 0, 1, 80, 220);              
 
             let x = cos(finalAngle) * this.currentLen;
             let y = sin(finalAngle) * this.currentLen;
@@ -369,7 +381,7 @@
             let cx2 = cAngle * cp2Rad + tanX * currentCurveAmount * 0.8;
             let cy2 = sAngle * cp2Rad + tanY * currentCurveAmount * 0.8;
             
-            // 种子连接线也是彩色
+            // 连线：深灰色
             noFill(); 
             stroke(this.color.r, this.color.g, this.color.b, alpha * 0.6); 
             strokeWeight(weight);
@@ -381,11 +393,13 @@
             rotate(wobble); 
             
             if (zFactor > 0.6 && this.scale > 0.6) {
-                let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
+                // 近处：加粗（描边）
+                let textStrokeW = map(zFactor, 0.6, 1, 0.1, 0.8) * this.scale;
                 stroke(this.color.r, this.color.g, this.color.b, alpha);
                 strokeWeight(textStrokeW);
                 fill(this.color.r, this.color.g, this.color.b, alpha);
             } else {
+                // 远处：无描边，显得更细
                 noStroke();
                 fill(this.color.r, this.color.g, this.color.b, alpha);
             }
@@ -414,7 +428,7 @@
             let zFactor = map(this.z, -1, 1, 0, 1); 
             let weight = map(zFactor, 0, 1, 0.2, 2.8) * this.scale;
             let size = map(zFactor, 0, 1, 8, 20) * this.scale;
-            let baseAlpha = map(zFactor, 0, 1, 100, 255);
+            let baseAlpha = map(zFactor, 0, 1, 80, 220);
 
             let fadeAlpha = 1.0;
             if (this.lifespan < CONFIG.fadeDuration) {
@@ -448,7 +462,7 @@
             bezier(0, 0, -5 - stretch, controlY, -10 - stretch + wag, controlY, -15 - stretch, 0);
             
             if (zFactor > 0.6 && this.scale > 0.6) {
-                let textStrokeW = map(zFactor, 0.6, 1, 0.1, 1.0) * this.scale;
+                let textStrokeW = map(zFactor, 0.6, 1, 0.1, 0.8) * this.scale;
                 stroke(this.color.r, this.color.g, this.color.b, finalAlpha);
                 strokeWeight(textStrokeW);
                 fill(this.color.r, this.color.g, this.color.b, finalAlpha);
