@@ -3,35 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis V25 - Candy Colors</title>
+    <title>Mitosis V26 - Dark Neon</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #f9f9f9; } /* 背景稍微调亮一点 */
+        /* 1. 背景全黑 */
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #050505; }
         canvas { display: block; }
+        
+        /* 2. UI 变成深色半透明磨砂 */
         #ui-container {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
+            background: rgba(20, 20, 20, 0.8); /* 深色背景 */
+            backdrop-filter: blur(8px);
             padding: 15px; border-radius: 12px;
             font-family: 'Segoe UI Emoji', 'Arial', sans-serif;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1); z-index: 100;
+            border: 1px solid rgba(255, 255, 255, 0.1); /* 微弱的边框 */
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 100;
             display: flex; flex-direction: column; gap: 12px;
             width: 220px;
         }
-        label { font-size: 12px; font-weight: bold; color: #555; }
-        input[type=range] { width: 100%; cursor: pointer; accent-color: #FF6B6B; } /* 滑块也变成珊瑚色 */
+        
+        label { font-size: 12px; font-weight: bold; color: #ccc; } /* 文字变亮 */
+        input[type=range] { width: 100%; cursor: pointer; accent-color: #00EAD3; } /* 滑块变成青色荧光 */
         
         .btn-group { display: flex; gap: 10px; }
         button {
             flex: 1; padding: 10px 0; cursor: pointer;
             border: none; border-radius: 6px; 
-            font-weight: bold; font-size: 13px; color: #fff; 
+            font-weight: bold; font-size: 13px; color: #000; 
             transition: all 0.2s;
         }
-        #blowBtn { background: #FF6B6B; box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3); }
-        #blowBtn:hover { background: #FF8787; transform: scale(1.02); }
-        #clearBtn { background: #4ECDC4; box-shadow: 0 4px 10px rgba(78, 205, 196, 0.3); }
-        #clearBtn:hover { background: #71E3DB; transform: scale(1.02); }
+        
+        /* 按钮使用高亮的霓虹色 */
+        #blowBtn { background: #00EAD3; box-shadow: 0 0 10px rgba(0, 234, 211, 0.4); }
+        #blowBtn:hover { background: #5FFBF1; transform: scale(1.02); }
+        
+        #clearBtn { background: #FF449F; color: #fff; box-shadow: 0 0 10px rgba(255, 68, 159, 0.4); }
+        #clearBtn:hover { background: #FF7BBF; transform: scale(1.02); }
+        
         button:active { transform: scale(0.95); }
     </style>
 </head>
@@ -43,11 +52,11 @@
         <input type="range" id="windSlider" min="0" max="5" step="0.1" value="1.0">
     </div>
     <div class="btn-group">
-        <button id="blowBtn">🍬 缤纷炸散</button>
+        <button id="blowBtn">💥 炸散</button>
         <button id="clearBtn">🧹 清空</button>
     </div>
-    <div style="font-size:11px; color:#aaa; margin-top:5px; text-align:center;">
-        *马卡龙配色 & 自动消散
+    <div style="font-size:11px; color:#666; margin-top:5px; text-align:center;">
+        *暗夜霓虹模式 (Neon Mode)
     </div>
 </div>
 
@@ -55,7 +64,8 @@
     const CONFIG = {
         baseSeedCount: 45,        
         bloomInterval: 1,         
-        stemColor: [60, 80, 70],  // 茎的颜色：深灰绿 (RGB)
+        // 3. 茎的颜色改成浅灰色/银色，以便在黑背景下可见
+        stemColor: [150, 150, 150],  
         windSpeed: 0.005,         
         
         tentacleSpeed: 0.02,
@@ -63,23 +73,21 @@
         maxCurveSlack: 100,
         regrowDelay: 100,
         
-        // 性能与模糊
         blurThreshold: 0.4, 
         blurAmount: '4px',
         
-        // 生命周期 (帧)
         minLifespan: 180, 
         maxLifespan: 300, 
         fadeDuration: 60   
     };
     
-    // --- 🎨 糖果/马卡龙配色池 (RGB Objects) ---
+    // --- 🎨 霓虹配色池 (更亮、更荧光) ---
     const COLOR_PALETTE = [
-        {r: 255, g: 107, b: 107}, // 珊瑚粉 (Coral Red)
-        {r: 78,  g: 205, b: 196}, // 绿松石 (Turquoise)
-        {r: 255, g: 217, b: 61},  // 暖黄 (Warm Yellow)
-        {r: 108, g: 92,  b: 231}, // 软紫 (Soft Purple)
-        {r: 255, g: 159, b: 67}   // 橙色 (Orange)
+        {r: 0,   g: 234, b: 211}, // 赛博青 (Cyber Cyan)
+        {r: 255, g: 68,  b: 159}, // 霓虹粉 (Neon Pink)
+        {r: 255, g: 215, b: 0},   // 亮金色 (Gold)
+        {r: 57,  g: 255, b: 20},  // 荧光绿 (Lime)
+        {r: 170, g: 0,   b: 255}  // 电光紫 (Electric Purple)
     ];
 
     const KAOMOJI_LIST = [
@@ -125,14 +133,14 @@
 
     function draw() {
         clear();
-        background('#f9f9f9'); // 背景更干净
+        // 4. 画布背景设为全黑
+        background('#050505'); 
         
         let userWindForce = parseFloat(windSlider.value);
         globalWindTime += CONFIG.windSpeed;
         let windNoise = noise(globalWindTime) - 0.5; 
         let plantWind = windNoise * userWindForce * 0.5; 
 
-        // 1. 更新
         for (let flower of flowers) flower.update(plantWind);
         
         for (let i = airborneSeeds.length - 1; i >= 0; i--) {
@@ -143,7 +151,6 @@
             }
         }
 
-        // 2. 分层
         let bgRenderList = [];
         let fgRenderList = [];
 
@@ -163,9 +170,9 @@
             }
         }
 
-        // 3. 渲染
         push();
         if (bgRenderList.length > 0) {
+            // 在黑色背景下，模糊效果会产生类似“光晕” (Bokeh) 的美感
             drawingContext.filter = `blur(${CONFIG.blurAmount})`;
             for (let item of bgRenderList) {
                 if (item.type === 'flower') item.obj.display();
@@ -273,8 +280,8 @@
         display() {
             if (this.delayTimer > 0) return;
             noFill(); 
-            // 茎的颜色固定为深色，不随糖果色变
-            stroke(CONFIG.stemColor[0], CONFIG.stemColor[1], CONFIG.stemColor[2], 120); 
+            // 茎：使用配置的亮灰色
+            stroke(CONFIG.stemColor[0], CONFIG.stemColor[1], CONFIG.stemColor[2], 180); 
             
             let stemWeight = map(this.scale, 0.5, 1.7, 0.8, 2.5);
             strokeWeight(stemWeight);
@@ -287,8 +294,8 @@
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
             if (this.state !== 'blown' && this.activeSeedCount > 5) {
-                // 花托稍微淡一点
-                let alpha = this.scale > 0.6 ? 40 : 20;
+                // 花托透明度
+                let alpha = this.scale > 0.6 ? 60 : 30;
                 noFill(); stroke(CONFIG.stemColor[0], CONFIG.stemColor[1], CONFIG.stemColor[2], alpha); strokeWeight(0.8);
                 let r = this.maxRadius * this.growProgress;
                 circle(0, 0, r * 2);
@@ -308,8 +315,6 @@
             this.minLen = maxRadius * CONFIG.minReachRatio;
             this.currentLen = 0;
             this.val = random(KAOMOJI_LIST);
-            
-            // --- 核心：随机分配糖果色 ---
             this.color = random(COLOR_PALETTE);
 
             this.z = random(-1, 1); 
@@ -364,7 +369,7 @@
             let cx2 = cAngle * cp2Rad + tanX * currentCurveAmount * 0.8;
             let cy2 = sAngle * cp2Rad + tanY * currentCurveAmount * 0.8;
             
-            // 使用分配的颜色，带上透明度
+            // 种子连接线也是彩色
             noFill(); 
             stroke(this.color.r, this.color.g, this.color.b, alpha * 0.6); 
             strokeWeight(weight);
@@ -434,7 +439,6 @@
             let stretch = constrain(speed * 2, 0, 40); 
             
             noFill();
-            // 尾巴颜色
             stroke(this.color.r, this.color.g, this.color.b, finalAlpha * 0.5);
             strokeWeight(weight);
             
