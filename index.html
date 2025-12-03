@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Volatile Digital Dandelion V7</title>
+    <title>High Performance Blur Dandelion V8</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background-color: #e8e8e8; }
         canvas { display: block; }
 
-        /* UI 保持不变 */
         #ui-container {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(255, 255, 255, 0.8);
+            background: rgba(255, 255, 255, 0.85);
             padding: 15px; border-radius: 8px;
             font-family: 'Courier New', monospace;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            backdrop-filter: blur(5px);
             z-index: 100; display: flex; flex-direction: column; gap: 10px;
         }
         label { font-size: 14px; font-weight: bold; color: #333; }
@@ -31,17 +31,22 @@
 
 <script>
     const CONFIG = {
-        baseSeedCount: 50,
+        baseSeedCount: 60,        // 数量可以稍微多一点了，因为性能好了
         bloomInterval: 2,
         baseColor: 20,            
         windSpeed: 0.005,
         
-        // --- 新增：动态与模糊参数 ---
-        hoverSpeed: 0.05,          // 数字颤动速度加快
-        hoverAmp: 0.15,            // 数字颤动幅度加大
-        lineVolatilitySpeed: 0.1,  // 线条波动的速率 (高频噪声)
-        lineVolatilityAmp: 30,     // 线条波动的幅度 (像素)
-        maxBlurStrength: 12        // 最大高斯模糊强度 (像素) - 增加此值会更模糊但更卡
+        // 动态效果参数
+        hoverSpeed: 0.05,
+        hoverAmp: 0.15,
+        lineVolatilitySpeed: 0.1, // 线条抖动速度
+        lineVolatilityAmp: 25,    // 线条抖动幅度
+        
+        // --- 性能优化核心配置 ---
+        // Z轴分界线：小于这个值的会被算作背景层并模糊
+        depthThreshold: -0.1, 
+        // 背景层的统一模糊强度 (像素)，一次性应用，开高点也没事
+        bgBlurStrength: 6         
     };
 
     let flowers = [];
@@ -49,7 +54,6 @@
     let windSlider;
 
     function setup() {
-        // 强制使用 P2D 模式以支持滤镜
         createCanvas(windowWidth, windowHeight, P2D);
         textFont('Courier New, monospace'); 
         frameRate(60); 
@@ -72,9 +76,25 @@
         let windNoise = noise(globalWindTime) - 0.5;
         let currentWind = windNoise * userWindForce; 
 
+        // 1. 物理计算阶段：先更新所有花和种子的位置
+        //    (这时候不画，只是算数据)
         for (let flower of flowers) {
             flower.update(currentWind);
-            flower.display();
+        }
+
+        // 2. 渲染阶段 - 第一层：背景层 (Blurred Layer)
+        //    开启模糊滤镜，一次性画完所有靠后的东西
+        drawingContext.filter = `blur(${CONFIG.bgBlurStrength}px)`;
+        for (let flower of flowers) {
+            flower.displayLayer('background');
+        }
+
+        // 3. 渲染阶段 - 第二层：前景层 (Sharp Layer)
+        //    关闭滤镜，画前面的东西
+        drawingContext.filter = 'none';
+        for (let flower of flowers) {
+            flower.displayLayer('foreground');
+            flower.displayStem(); // 茎通常比较清晰，放在前景画
         }
     }
 
@@ -87,7 +107,6 @@
         return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
     }
 
-    // --- 蒲公英主体 (逻辑基本不变) ---
     class Dandelion {
         constructor(x, startY, heightRatio, delay, scale) {
             this.baseX = x; this.baseY = startY; this.scale = scale;
@@ -101,7 +120,7 @@
             for (let i = 0; i < count; i++) {
                 this.seeds.push(new Seed(scale));
             }
-            // 关键：深度排序，确保后景先画，被前景遮挡
+            // 排序仍然重要，保证层级正确
             this.seeds.sort((a, b) => a.z - b.z);
             
             this.activeSeedCount = 0;
@@ -128,26 +147,42 @@
                     this.activeSeedCount++;
                 }
             }
+            // 更新所有种子物理状态
             for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].update();
         }
 
-        display() {
+        // 专门画茎的方法
+        displayStem() {
             if (this.timer < this.delay) return;
             noFill(); stroke(CONFIG.baseColor, 150); strokeWeight(1.5 * this.scale);
             let midX = (this.baseX + this.tipX) / 2; let midY = (this.baseY + this.tipY) / 2;
             let cx = midX - sin(this.stemBendAngle) * 60 * this.scale; 
             bezier(this.baseX, this.baseY, cx, midY, cx, midY, this.tipX, this.tipY);
+        }
 
+        // 分层渲染方法
+        displayLayer(layerType) {
+            if (this.timer < this.delay) return;
+            
             push();
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
-            // 移除了外圆环，让画面更聚焦于混乱的线条
-            for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].display();
+
+            for (let i = 0; i < this.activeSeedCount; i++) {
+                let s = this.seeds[i];
+                // 核心判断：根据 Z 深度决定是否在当前层渲染
+                let isBackground = s.z < CONFIG.depthThreshold;
+                
+                if (layerType === 'background' && isBackground) {
+                    s.display();
+                } else if (layerType === 'foreground' && !isBackground) {
+                    s.display();
+                }
+            }
             pop();
         }
     }
 
-    // --- 种子类 (核心修改区域) ---
     class Seed {
         constructor(scale) {
             this.scale = scale;
@@ -155,15 +190,12 @@
             this.targetLen = random(40, 120) * scale; 
             this.currentLen = 0;
             this.val = floor(random(0, 10));
-            this.z = random(-1, 1); // 深度：-1(后) 到 1(前)
+            this.z = random(-1, 1); 
             
             this.noiseOffset = random(1000); 
             this.hoverSpeedOffset = random(0.8, 1.5);
-            
-            // 用于线条波动的独立噪声偏移
             this.lineNoiseOffsetX = random(5000);
             this.lineNoiseOffsetY = random(5000);
-            
             this.baseCurveOffset = random(-20, 20) * scale;
             this.isActive = false; this.growProgress = 0;
         }
@@ -178,67 +210,48 @@
         }
 
         display() {
-            if (!this.isActive) return;
+            // 注意：这里不再设置 drawingContext.filter
+            // 因为已经在外部统一设置了，大大减少了开销
 
-            // 1. 计算端点的颤动 (更快、幅度更大)
+            // 计算端点颤动
             let hoverNoise = noise(frameCount * CONFIG.hoverSpeed * this.hoverSpeedOffset + this.noiseOffset);
             let hoverSway = map(hoverNoise, 0, 1, -CONFIG.hoverAmp, CONFIG.hoverAmp);
             let finalAngle = this.baseAngle + hoverSway;
 
-            // 2. 视觉参数计算
-            let zFactor = map(this.z, -1, 1, 0, 1); // 0(后) -> 1(前)
-            let finalAlpha = map(zFactor, 0, 1, 30, 240) * this.growProgress; // 背景更透
-            let weight = map(zFactor, 0, 1, 0.3, 1.3) * this.scale; 
+            let zFactor = map(this.z, -1, 1, 0, 1); 
+            
+            // 调整透明度：背景更淡一点，配合模糊效果更好
+            let alphaBase = (this.z < CONFIG.depthThreshold) ? 100 : 240;
+            let finalAlpha = alphaBase * this.growProgress;
+            
+            let weight = map(zFactor, 0, 1, 0.5, 1.5) * this.scale; 
             let size = map(zFactor, 0, 1, 10, 20) * this.scale;   
 
-            // --- 核心升级：计算高斯模糊强度 ---
-            // 只有 zFactor 小于 0.6 (偏后景) 的才应用模糊
-            // 越往后，模糊越强
-            let blurAmount = 0;
-            if (zFactor < 0.6) {
-                blurAmount = map(zFactor, 0.6, 0, 0, CONFIG.maxBlurStrength);
-            }
-
-            // 3. 计算带有呼吸感的终点坐标
             let breathingLen = this.currentLen + map(hoverNoise, 0, 1, -5, 5);
             let x = cos(finalAngle) * breathingLen;
             let y = sin(finalAngle) * breathingLen;
 
-            // --- 核心升级：计算动态无序的贝塞尔控制点 ---
-            // 使用高频噪声让控制点疯狂抖动
+            // 计算混乱波动的曲线控制点
             let lineVolatilityX = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetX) - 0.5) * CONFIG.lineVolatilityAmp;
             let lineVolatilityY = (noise(frameCount * CONFIG.lineVolatilitySpeed + this.lineNoiseOffsetY) - 0.5) * CONFIG.lineVolatilityAmp;
             
             let cpLen = breathingLen * 0.5;
-            // 基础控制点位置 + 基础弯曲偏移 + 动态高频扰动
             let cx = cos(finalAngle) * cpLen + cos(finalAngle + HALF_PI) * this.baseCurveOffset * this.growProgress + lineVolatilityX;
             let cy = sin(finalAngle) * cpLen + sin(finalAngle + HALF_PI) * this.baseCurveOffset * this.growProgress + lineVolatilityY;
 
-            push();
-            // --- 应用高斯模糊滤镜 (如果需要) ---
-            // 这行代码是性能消耗的大户，但带来了真实的景深
-            if (blurAmount > 0.5) {
-                drawingContext.filter = `blur(${blurAmount}px)`;
-            }
-
-            // 画动态曲线
+            // 绘制
             noFill();
             stroke(CONFIG.baseColor, finalAlpha * 0.6);
             strokeWeight(weight);
             bezier(0, 0, cx, cy, cx, cy, x, y);
 
-            // 画数字
+            push(); // 只需要这里的 push/pop 来隔离文字的 translate
             translate(x, y);
             noStroke();
             fill(CONFIG.baseColor, finalAlpha);
             textSize(size);
             textAlign(CENTER, CENTER);
             text(this.val, 0, 0);
-
-            // --- 重要：重置滤镜，否则会影响后续绘制 ---
-            if (blurAmount > 0.5) {
-                drawingContext.filter = 'none';
-            }
             pop();
         }
     }
