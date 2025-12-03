@@ -3,59 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitosis Tentacles V15 - Radial Explosion</title>
+    <title>Mitosis Tentacles V16 - FIREWORK EXPLOSION</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background-color: #f2f2f2; }
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #f0f0f0; }
         canvas { display: block; }
         #ui-container {
             position: absolute; top: 20px; left: 20px;
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(5px);
+            background: rgba(255, 255, 255, 0.9);
             padding: 15px; border-radius: 12px;
             font-family: 'Courier New', monospace;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1); z-index: 100;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15); z-index: 100;
             display: flex; flex-direction: column; gap: 12px;
-            width: 220px;
+            width: 240px;
+            border: 1px solid rgba(0,0,0,0.1);
         }
-        label { font-size: 12px; font-weight: bold; color: #555; letter-spacing: 1px; text-transform: uppercase;}
-        input[type=range] { width: 100%; cursor: pointer; display: block; accent-color: #333;}
+        label { font-size: 12px; font-weight: 800; color: #333; letter-spacing: 1px; text-transform: uppercase;}
+        input[type=range] { width: 100%; cursor: pointer; display: block; accent-color: #000;}
         button {
-            padding: 12px 0; cursor: pointer;
-            background: #222; color: #fff; border: none;
-            border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: bold;
-            transition: all 0.1s;
+            padding: 15px 0; cursor: pointer;
+            background: #000; color: #fff; border: none;
+            border-radius: 6px; font-family: inherit; font-size: 16px; font-weight: 900;
+            letter-spacing: 2px;
+            transition: transform 0.1s, background 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
-        button:hover { background: #444; transform: scale(1.02); }
-        button:active { transform: scale(0.95); }
+        button:hover { background: #333; transform: scale(1.02); }
+        button:active { transform: scale(0.96); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
     <div>
-        <label>Wind Force (漂浮风力)</label>
+        <label>Wind Force (后期漂浮)</label>
         <input type="range" id="windSlider" min="0" max="3" step="0.01" value="0.5">
     </div>
-    <button id="blowBtn">💥 炸 散 (EXPLODE)</button>
+    <button id="blowBtn">💥 爆 炸 (BOOM)</button>
 </div>
 
 <script>
     const CONFIG = {
-        baseSeedCount: 50,        
+        baseSeedCount: 60,        // 增加数量增强视觉密度
         bloomInterval: 1,         
-        baseColor: 30,            
+        baseColor: 20,            // 颜色更深一点
         windSpeed: 0.005,
         
-        seedsToBlurPerFlower: 5,
-        blurStrength: 6,
+        seedsToBlurPerFlower: 8,
+        blurStrength: 4,
         
         tentacleSpeed: 0.02,
         minReachRatio: 0.4,
         maxCurveSlack: 100,
 
-        // 炸散后的再生时间
-        regrowDelay: 140 
+        regrowDelay: 100 
     };
 
     let flowers = [];
@@ -78,13 +79,12 @@
 
     function initFlowers() {
         flowers = [];
-        flowers.push(new Dandelion(width * 0.5, height + 80, 0.5, 0, 1.2));
-        flowers.push(new Dandelion(width * 0.2, height + 60, 0.65, 40, 0.7));
-        flowers.push(new Dandelion(width * 0.8, height + 70, 0.55, 80, 0.9));
+        flowers.push(new Dandelion(width * 0.5, height + 60, 0.5, 0, 1.3));
+        flowers.push(new Dandelion(width * 0.2, height + 40, 0.65, 30, 0.75));
+        flowers.push(new Dandelion(width * 0.8, height + 50, 0.55, 60, 0.95));
     }
 
     function triggerExplosion() {
-        // 点击按钮时，触发所有花朵的爆炸方法
         for (let flower of flowers) {
             flower.explode();
         }
@@ -92,7 +92,7 @@
 
     function draw() {
         clear();
-        background('#f2f2f2');
+        background('#f0f0f0');
         
         let userWindForce = parseFloat(windSlider.value);
         globalWindTime += CONFIG.windSpeed;
@@ -100,14 +100,15 @@
         let windNoise = noise(globalWindTime) - 0.5; 
         let currentWind = windNoise * userWindForce; 
 
-        // 1. 更新花朵 (茎和未炸开的部分)
+        // 1. 绘制花朵
         for (let flower of flowers) {
             flower.update(currentWind);
             flower.display();
         }
 
-        // 2. 更新飞舞的种子 (物理粒子系统)
+        // 2. 绘制粒子
         if (airborneSeeds.length > 0) {
+            // 倒序遍历以便删除
             for (let i = airborneSeeds.length - 1; i >= 0; i--) {
                 let seed = airborneSeeds[i];
                 seed.updateAirborne(userWindForce);
@@ -162,39 +163,37 @@
             this.activeSeedCount = 0;
         }
 
-        // --- 核心修改：爆炸逻辑 ---
         explode() {
-            // 只有开花状态才能炸
             if (this.state !== 'blooming') return;
 
-            // 遍历所有当前可见的种子
             for (let i = 0; i < this.activeSeedCount; i++) {
                 let s = this.seeds[i];
                 
-                // 1. 计算种子在这一帧的世界坐标
+                // 1. 坐标转换
                 let finalAngle = s.baseAngle; 
                 let localX = cos(finalAngle) * s.currentLen;
                 let localY = sin(finalAngle) * s.currentLen;
-                
-                // 加上茎的旋转
                 let rotatedX = localX * cos(this.stemBendAngle) - localY * sin(this.stemBendAngle);
                 let rotatedY = localX * sin(this.stemBendAngle) + localY * cos(this.stemBendAngle);
                 
                 s.pos = createVector(this.tipX + rotatedX, this.tipY + rotatedY);
 
-                // 2. 计算爆发速度 (Radial Velocity)
-                // 方向：从圆心指向种子
+                // 2. 暴力美学：计算爆发向量
+                // 基础方向：从圆心向外
                 let burstDir = p5.Vector.fromAngle(finalAngle + this.stemBendAngle);
                 
-                // 力度：随机的大数值，制造冲击感
-                let explosionForce = random(8, 15); 
+                // 力度：大幅提升！以前是8-15，现在是30-60
+                // 这种极高的速度会让它瞬间散开
+                let explosionForce = random(30, 60); 
+                
+                // 稍微增加一点角度随机性，让爆炸不那么规则，更像自然炸裂
+                burstDir.rotate(random(-0.1, 0.1));
+                
                 s.vel = burstDir.mult(explosionForce);
                 
-                // 加入到飞行列表
                 airborneSeeds.push(s);
             }
 
-            // 清空花朵，进入“光秃”状态
             this.seeds = [];
             this.activeSeedCount = 0;
             this.state = 'blown';
@@ -204,30 +203,22 @@
         update(wind) {
             if (this.delayTimer > 0) { this.delayTimer--; return; }
 
-            // 简单的状态机
             if (this.state === 'waiting') {
                 this.state = 'growing';
             }
             else if (this.state === 'growing') {
-                this.growProgress += 0.015;
-                if (this.growProgress >= 1) { 
-                    this.growProgress = 1; 
-                    this.state = 'blooming'; 
-                }
-                this.currentStemLen = lerp(this.currentStemLen, this.maxStemLen, 0.03);
+                this.growProgress += 0.02; // 长得快一点
+                if (this.growProgress >= 1) { this.growProgress = 1; this.state = 'blooming'; }
+                this.currentStemLen = lerp(this.currentStemLen, this.maxStemLen, 0.04);
             }
             else if (this.state === 'blooming') {
-                // 逐个出现
                 if (frameCount % CONFIG.bloomInterval === 0 && this.activeSeedCount < this.seeds.length) {
                     this.seeds[this.activeSeedCount].activate();
                     this.activeSeedCount++;
                 }
             }
             else if (this.state === 'blown') {
-                // 炸开后茎稍微回缩，表现得像失去了重量
-                this.currentStemLen = lerp(this.currentStemLen, this.maxStemLen * 0.95, 0.05);
-                
-                // 再生倒计时
+                this.currentStemLen = lerp(this.currentStemLen, this.maxStemLen * 0.9, 0.1); // 回缩快一点
                 this.regrowTimer++;
                 if (this.regrowTimer > CONFIG.regrowDelay) {
                     this.populateSeeds();
@@ -236,14 +227,11 @@
                 }
             }
 
-            // 物理摇摆
             let bendMagnitude = wind * (this.currentStemLen / 200) * this.scale; 
             this.stemBendAngle = lerp(this.stemBendAngle, bendMagnitude, 0.08);
-            
             this.tipX = this.baseX + cos(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
             this.tipY = this.baseY + sin(-HALF_PI + this.stemBendAngle) * this.currentStemLen;
 
-            // 只有未炸开时才更新附着的种子
             if (this.state === 'growing' || this.state === 'blooming') {
                 for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].updateAttached();
             }
@@ -252,7 +240,6 @@
         display() {
             if (this.delayTimer > 0) return;
             
-            // 茎
             noFill(); stroke(CONFIG.baseColor, 120); strokeWeight(1.2 * this.scale);
             let midX = (this.baseX + this.tipX) / 2; let midY = (this.baseY + this.tipY) / 2;
             let cx = midX - sin(this.stemBendAngle) * 60 * this.scale; 
@@ -261,14 +248,11 @@
             push();
             translate(this.tipX, this.tipY);
             rotate(this.stemBendAngle);
-            
-            // 外轮廓
             if (this.state !== 'blown' && this.activeSeedCount > 5) {
                 noFill(); stroke(CONFIG.baseColor, 20); strokeWeight(0.8);
                 let r = this.maxRadius * this.growProgress;
                 circle(0, 0, r * 2);
             }
-
             if (this.state !== 'blown') {
                 for (let i = 0; i < this.activeSeedCount; i++) this.seeds[i].displayAttached();
             }
@@ -280,30 +264,25 @@
         constructor(scale, maxRadius) {
             this.scale = scale;
             this.baseAngle = random(TWO_PI);
-            
             this.maxLen = maxRadius;
             this.minLen = maxRadius * CONFIG.minReachRatio;
-            
             this.currentLen = 0;
             this.val = floor(random(0, 10));
             this.z = random(-1, 1); 
             this.needsBlur = false;
-
             this.cycleOffset = random(TWO_PI); 
             this.cycleSpeed = random(CONFIG.tentacleSpeed * 0.5, CONFIG.tentacleSpeed * 1.5); 
-            
             this.curveDir = random() > 0.5 ? 1 : -1;
             this.slackNoise = random(1000);
-            
             this.isActive = false; 
             this.growProgress = 0;
             this.reachFactor = 0;
 
-            // 物理属性
+            // Physics
             this.pos = createVector(0,0);
             this.vel = createVector(0,0);
             this.angle = 0;
-            this.angleVel = random(-0.1, 0.1); 
+            this.angleVel = random(-0.2, 0.2); 
             this.floatOffset = random(100); 
         }
 
@@ -317,7 +296,6 @@
             this.reachFactor = easeInOutSine(cycleNorm);
             let targetCurrentLen = lerp(this.minLen, this.maxLen, this.reachFactor);
             this.currentLen = targetCurrentLen * this.growProgress;
-            
             if (frameCount % floor(random(50, 120)) === 0) this.val = floor(random(0, 10));
         }
 
@@ -329,7 +307,6 @@
             let finalAlpha = dynamicAlpha * this.growProgress;
             let weight = map(zFactor, 0, 1, 0.5, 1.4) * this.scale; 
             let size = map(zFactor, 0, 1, 12, 22) * this.scale;   
-
             let x = cos(finalAngle) * this.currentLen;
             let y = sin(finalAngle) * this.currentLen;
 
@@ -359,32 +336,24 @@
             pop();
         }
 
-        // --- 核心：爆炸后的物理系统 ---
+        // --- 核心：暴力物理引擎 ---
         updateAirborne(windForce) {
-            // 1. 获取当前速度
             let speed = this.vel.mag();
 
-            // 2. 模拟空气阻力 (Air Resistance)
-            // 阻力与速度的平方成正比。速度越快，阻力越大。
-            // 这会导致爆炸瞬间减速非常快，产生“嘭”的一下的视觉张力。
-            let dragMagnitude = speed * speed * 0.08; 
-            if (speed > 0) {
-                let drag = this.vel.copy().normalize().mult(-dragMagnitude);
-                this.vel.add(drag);
-            }
+            // 1. 强力空气阻力 (Drag)
+            // 速度越快，阻力越大。系数设为 0.9，意味着每一帧速度只保留90%。
+            // 这会造成极速的衰减：60 -> 54 -> 48... -> 5 -> 漂浮
+            // 这种急停感是“爆炸”视觉的关键。
+            this.vel.mult(0.92); 
 
-            // 3. 漂浮阶段
-            // 当速度降下来后，让它们受到微风和湍流的影响
-            if (speed < 5) { // 阈值：速度小于5时，进入漂浮模式
-                let noiseScale = 0.01;
+            // 2. 漂浮接管
+            // 当速度衰减到一定程度(比如小于3)，物理系统切换为流体漂浮
+            if (speed < 4) {
+                let noiseScale = 0.008;
                 let theta = map(noise(this.pos.x * noiseScale, this.pos.y * noiseScale, frameCount * 0.01), 0, 1, -PI, PI);
-                
-                // 湍流力
-                let turbulence = p5.Vector.fromAngle(theta).mult(0.05);
-                // 用户滑块控制的风
-                let steadyWind = createVector(windForce * 0.05, -0.01 * windForce);
-                // 微弱重力
-                let gravity = createVector(0, 0.03);
+                let turbulence = p5.Vector.fromAngle(theta).mult(0.1);
+                let steadyWind = createVector(windForce * 0.08, -0.02 * windForce);
+                let gravity = createVector(0, 0.05);
 
                 this.vel.add(turbulence);
                 this.vel.add(steadyWind);
@@ -392,37 +361,53 @@
             }
 
             this.pos.add(this.vel);
-
-            // 旋转跟随速度方向，但也稍微保留一点自旋
             this.angle += this.angleVel;
-            this.angleVel *= 0.95; // 自旋慢慢停止
+            this.angleVel *= 0.95; 
         }
 
         displayAirborne() {
             let zFactor = map(this.z, -1, 1, 0, 1); 
             let alpha = this.needsBlur ? 80 : 180;
             let size = map(zFactor, 0, 1, 12, 22) * this.scale;
+            let speed = this.vel.mag();
 
             push();
             translate(this.pos.x, this.pos.y);
-            rotate(this.angle); 
+            
+            // 视觉旋转：如果是高速飞行，顺着速度方向；如果是漂浮，自由旋转
+            if (speed > 2) {
+                rotate(this.vel.heading());
+            } else {
+                rotate(this.angle); 
+            }
 
             if (this.needsBlur) drawingContext.filter = `blur(${CONFIG.blurStrength}px)`;
 
-            // 绒毛尾巴
-            let tailWag = sin(frameCount * 0.15 + this.floatOffset) * 4;
+            // --- 动态拉伸拖尾 ---
+            // 速度越快，尾巴拉得越直越长，模拟运动模糊
+            let stretch = constrain(speed * 2, 0, 40); 
             
             noFill();
-            stroke(CONFIG.baseColor, alpha * 0.4);
+            stroke(CONFIG.baseColor, alpha * 0.5);
             strokeWeight(0.5);
-            // 尾巴稍微拉长一点，增强速度感
-            bezier(0, 0, -5, 5, -10 + tailWag, 5, -15, 0);
-            bezier(0, 0, -5, -5, -10 + tailWag, -5, -15, 0);
+            
+            // 尾巴根据速度被拉直
+            // 正常漂浮时弯曲，高速时变直
+            let wag = (speed > 3) ? 0 : sin(frameCount * 0.2 + this.floatOffset) * 4;
+            let controlY = (speed > 3) ? 1 : 5;
 
+            bezier(0, 0, -5 - stretch, controlY, -10 - stretch + wag, controlY, -15 - stretch, 0);
+            
             noStroke();
             fill(CONFIG.baseColor, alpha);
             textSize(size);
             textAlign(CENTER, CENTER);
+            
+            // 高速时修正文字角度，不要倒过来
+            if (speed > 2 && abs(this.vel.heading()) > HALF_PI) {
+                 rotate(PI);
+            }
+            
             text(this.val, 0, 0);
 
             if (this.needsBlur) drawingContext.filter = 'none';
@@ -430,7 +415,8 @@
         }
 
         isDead() {
-            return (this.pos.x > width + 400 || this.pos.y < -400 || this.pos.x < -400 || this.pos.y > height + 200);
+            // 扩大边界判定，因为爆炸可能瞬间飞很远
+            return (this.pos.x > width + 500 || this.pos.y < -500 || this.pos.x < -500 || this.pos.y > height + 500);
         }
     }
 </script>
